@@ -6,6 +6,7 @@ import FixedContactBar from "@/components/FixedContactBar";
 import { SiteConfigProvider } from "@/components/SiteConfigProvider";
 import { getSiteConfig } from "@/lib/site-config";
 import { buildSiteMetadata } from "@/lib/metadata";
+import { NAVER_SITE_VERIFICATION } from "@/lib/constants";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getSiteConfig();
@@ -22,12 +23,17 @@ export default async function RootLayout({
   return (
     <html lang="ko">
       <head>
+        <meta
+          name="naver-site-verification"
+          content={NAVER_SITE_VERIFICATION}
+        />
         <link
           rel="alternate"
           type="application/rss+xml"
           title={`${config.brandName} RSS`}
           href="/feed.xml"
         />
+        <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"

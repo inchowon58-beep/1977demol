@@ -7,6 +7,7 @@ import {
   type SiteConfig,
 } from "./site-config-types";
 import { getImageIndexFromSeed, getImageUrl } from "./site-images";
+import { enrichSeoContentWithImages } from "./seo-content-images";
 
 export type { SiteConfig, PublicSiteConfig };
 export { DEFAULT_SITE_CONFIG, phoneToTel, toPublicConfig };
@@ -85,11 +86,13 @@ export interface ResolvedSeoPage extends Omit<SeoPage, "imageUrl" | "imageIndex"
 }
 
 export function resolveSeoPage(page: SeoPage, config: SiteConfig): ResolvedSeoPage {
+  const seed = page.slug || page.keyword;
+  const tokenized = applySiteTokens(page.content, config);
   return {
     ...page,
     title: applySiteTokens(page.title, config),
     description: applySiteTokens(page.description, config),
-    content: applySiteTokens(page.content, config),
+    content: enrichSeoContentWithImages(tokenized, page.keyword, config, seed),
     faqs: (page.faqs || []).map((f) => ({
       question: applySiteTokens(f.question, config),
       answer: applySiteTokens(f.answer, config),

@@ -55,6 +55,51 @@ html {
   margin-bottom: 1rem;
 }
 
+.prose-seo .seo-content-image {
+  margin: 1.75rem 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: var(--gray-bg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+
+.prose-seo .seo-content-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  max-height: 28rem;
+}
+
+.prose-seo .seo-content-image figcaption {
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
+  color: #666;
+  text-align: center;
+  background: #fff;
+  border-top: 1px solid #eee;
+}
+
+.prose-seo .seo-image-gallery {
+  display: grid;
+  gap: 1rem;
+  margin: 1.75rem 0;
+}
+
+@media (min-width: 640px) {
+  .prose-seo .seo-image-gallery {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .prose-seo .seo-image-gallery .seo-content-image {
+    margin: 0;
+  }
+
+  .prose-seo .seo-image-gallery .seo-content-image img {
+    max-height: 12rem;
+  }
+}
+
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

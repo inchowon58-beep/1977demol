@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { SiteConfig } from "./site-config-types";
+import { NAVER_SITE_VERIFICATION } from "./constants";
 import { getSiteUrl } from "./site-url";
 
 export const OG_IMAGE_WIDTH = 1200;
@@ -120,6 +121,11 @@ export function buildSiteMetadata(config: SiteConfig): Metadata {
       },
     },
     robots: { index: true, follow: true },
+    verification: {
+      other: {
+        "naver-site-verification": NAVER_SITE_VERIFICATION,
+      },
+    },
     icons: {
       icon: [{ url: "/icon", type: "image/png" }],
       apple: [{ url: "/apple-icon", type: "image/png" }],

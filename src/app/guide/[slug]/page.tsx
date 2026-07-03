@@ -172,7 +172,7 @@ export default async function GuidePage({ params }: Props) {
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "ItemList",
-              name: `${localRegion || page.keyword} 인테리어 협력 업체`,
+              name: `${localRegion || page.keyword} 인테리어 관련 업체`,
               itemListElement: localPartners.map((partner, index) => ({
                 "@type": "ListItem",
                 position: index + 1,

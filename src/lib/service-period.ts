@@ -1,4 +1,4 @@
-import { clearAllPages, getPages, getSettings, saveSettings } from "./data";
+import { getSettings, saveSettings } from "./data";
 import { DEFAULT_SITE_CONFIG } from "./site-config-types";
 
 export interface ServicePeriodStatus {
@@ -53,19 +53,6 @@ export async function getServicePeriodStatus(): Promise<ServicePeriodStatus> {
     expired: !!expiresAt && !active,
   };
 }
-
-/** 기간 만료 시 SEO 페이지 전체 삭제 (복구 불가) */
-export async function purgePagesIfServiceExpired(): Promise<boolean> {
-  const status = await getServicePeriodStatus();
-  if (status.active) return false;
-
-  const pages = await getPages();
-  if (pages.length === 0) return false;
-
-  await clearAllPages();
-  return true;
-}
-
 export async function applyServiceAvailableDays(days: number): Promise<string> {
   const expiresAt = computeExpiresAtFromDays(days);
   const settings = await getSettings();

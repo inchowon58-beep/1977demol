@@ -10,8 +10,9 @@ import {
   resolveSeoPage,
   phoneToTel,
 } from "@/lib/site-config";
-import { getRelatedPages } from "@/lib/related-pages";
-import RelatedPagesSection from "@/components/RelatedPagesSection";
+import { extractRegionFromKeyword } from "@/lib/region-parse";
+import { getNearbyRegionLinks } from "@/lib/nearby-regions";
+import NearbyRegionsSection from "@/components/NearbyRegionsSection";
 import LocalPartnersSection from "@/components/LocalPartnersSection";
 import { ensureLocalPartners } from "@/lib/seo-local-partners";
 
@@ -43,11 +44,12 @@ export default async function GuidePage({ params }: Props) {
   if (!page) notFound();
 
   const resolved = resolveSeoPage(page, config);
-  const relatedPages = await getRelatedPages(page.slug, config, 5);
   const { region: localRegion, partners: localPartners } = await ensureLocalPartners(
     page,
     config
   );
+  const currentRegion = extractRegionFromKeyword(page.keyword) || localRegion;
+  const nearbyRegions = await getNearbyRegionLinks(currentRegion, page.slug, config);
   const faqs =
     resolved.faqs?.length >= 3
       ? resolved.faqs.slice(0, 3)
@@ -121,7 +123,7 @@ export default async function GuidePage({ params }: Props) {
           </div>
         </div>
 
-        <RelatedPagesSection pages={relatedPages} brandName={config.brandName} />
+        <NearbyRegionsSection regions={nearbyRegions} />
 
         {localRegion && (
           <LocalPartnersSection

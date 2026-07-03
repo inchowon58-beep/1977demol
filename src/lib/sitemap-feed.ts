@@ -3,7 +3,6 @@ import { getPages } from "@/lib/data";
 import { guidePageUrl } from "@/lib/constants";
 import { getSiteConfig, getPageImageUrl, resolveSeoPage } from "@/lib/site-config";
 import { escapeXml, stripHtml, toCdata, toRfc822 } from "@/lib/site-url";
-import { purgePagesIfServiceExpired } from "@/lib/service-period";
 
 export interface FeedEntry {
   id: string;
@@ -38,7 +37,6 @@ function normalizeEntry(
 
 /** Blob·로컬 data/pages.json 기준 — 생성되는 모든 SEO 페이지 반영 */
 export async function getFeedEntries(baseUrl: string): Promise<FeedEntry[]> {
-  await purgePagesIfServiceExpired();
   const [pages, config] = await Promise.all([getPages(), getSiteConfig()]);
 
   return pages

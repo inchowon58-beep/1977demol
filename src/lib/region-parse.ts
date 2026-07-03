@@ -1,5 +1,5 @@
 /** 키워드에서 지역명 추출 (예: 의정부철거업체 → 의정부) */
-const SERVICE_SUFFIXES = [
+export const SERVICE_SUFFIXES = [
   "인테리어철거업체",
   "인테리어철거",
   "상가철거업체",
@@ -21,6 +21,8 @@ const KNOWN_REGIONS = [
   "부산", "대구", "광주", "대전", "울산", "세종", "창원", "천안", "청주", "전주",
   "제주", "춘천", "원주", "포항", "구미", "김해", "진주", "순천", "목포", "여수",
 ];
+
+export { KNOWN_REGIONS };
 
 export function extractRegionFromKeyword(keyword: string): string | null {
   const normalized = keyword.replace(/\s+/g, "").trim();

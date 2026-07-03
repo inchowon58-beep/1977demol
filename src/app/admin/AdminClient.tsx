@@ -23,7 +23,6 @@ interface SeoQuota {
     active: boolean;
     expired: boolean;
   };
-  purged?: boolean;
 }
 
 export default function AdminClient() {
@@ -154,15 +153,9 @@ export default function AdminClient() {
               <p className="text-sm mt-1 opacity-80">만료 예정일: {quota.service.expiresAt} (KST)</p>
             )}
             <p className="text-sm mt-3 leading-relaxed opacity-90">
-              기간만료 이후에는 해당페이지들이 모두 삭제처리 될수 있습니다.
-              <br />
-              삭제처리 이후에는 복구가 불가능하니 기간만료 이전 연장을 진행하시기 바랍니다.
+              기간 만료 후에는 새 SEO 페이지 생성만 제한됩니다. 기존 페이지는 그대로 유지되며,
+              삭제는 관리자가 수동으로 진행해야 합니다.
             </p>
-            {quota.purged && (
-              <p className="text-sm mt-2 font-medium text-red-700">
-                만료된 SEO 페이지가 삭제되었습니다. 마스터 설정에서 기간을 연장하세요.
-              </p>
-            )}
           </div>
         )}
 

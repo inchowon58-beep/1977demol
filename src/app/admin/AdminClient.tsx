@@ -80,6 +80,9 @@ export default function AdminClient() {
     const masterData = await masterRes.json();
     const unlocked = !!masterData.authenticated;
     setMasterUnlocked(unlocked);
+    if (!unlocked) {
+      setShowMasterModal(true);
+    }
     await loadData(unlocked);
   };
 
@@ -147,6 +150,11 @@ export default function AdminClient() {
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!keyword.trim()) return;
+    if (!masterUnlocked) {
+      setShowMasterModal(true);
+      setMessage("SEO 페이지 생성을 위해 마스터 비밀번호를 입력해주세요.");
+      return;
+    }
     setGenerating(true);
     setMessage("Gemini AI로 SEO 문서 생성 중...");
     try {
@@ -160,6 +168,10 @@ export default function AdminClient() {
         setMessage(`"${page.title}" SEO 페이지가 생성되었습니다.`);
         setKeyword("");
         loadData(true);
+      } else if (res.status === 401) {
+        setMasterUnlocked(false);
+        setShowMasterModal(true);
+        setMessage("마스터 비밀번호 인증이 필요합니다. 다시 입력해주세요.");
       } else {
         const err = await res.json().catch(() => ({}));
         setMessage(err.error || "SEO 페이지 생성 실패.");
@@ -287,6 +299,11 @@ export default function AdminClient() {
 
         {tab === "seo" && (
           <>
+            {!masterUnlocked && (
+              <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                SEO 페이지 생성·관리를 위해 마스터 비밀번호 인증이 필요합니다.
+              </p>
+            )}
             <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
               <h2 className="font-bold text-dark mb-4">SEO 페이지 생성</h2>
               <form onSubmit={handleGenerate} className="space-y-4">

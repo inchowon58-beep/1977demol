@@ -1,1 +1,54 @@
-[]
+[
+  {
+    "id": "page-1783075280025",
+    "slug": "1783075280025",
+    "keyword": "??????",
+    "regionName": "??????",
+    "title": "?????? 전문 | {{brandName}}",
+    "description": "?????? 무료 방문 견적, 폐업지원금 신청 대행. {{brandName}}이 철거부터 원상복구까지 원스톱으로 해결해 드립니다.",
+    "content": "<h2>?????? — {{brandName}} 전문 안내</h2>\n<p>{{companyName}} {{brandName}}은 폐업지원금 신청부터 ??????, 원상복구까지 한 번에 진행하는 전국 폐업철거 전문 업체입니다.</p>\n\n<h3>{{brandName}}를 선택하는 이유</h3>\n<ul>\n<li>현장 경험이 풍부한 전문 인력으로 신속·안전한 시공</li>\n<li>폐업 컨설턴트가 지원금 신청 무료 대행</li>\n<li>집기·비품 합리적 매입으로 비용 절감</li>\n<li>무료 현장 방문 견적</li>\n</ul>\n\n<h3>폐업지원금 안내</h3>\n<p>폐업철거지원금 {{supportBase}}, 추가지원금 {{supportExtra}}으로 최대 {{supportMax}}까지 지원받을 수 있습니다. 지역·업종·평수에 따라 상이하니 철거 전 꼭 상담받으세요.</p>\n\n<h3>?????? 진행 절차</h3>\n<ul>\n<li>Step 1. 전화·상담 접수</li>\n<li>Step 2. 무료 현장 방문 견적</li>\n<li>Step 3. 철거 및 지원금 신청 대행</li>\n</ul>\n\n<h3>상담 문의</h3>\n<p>?????? 관련 문의는 {{phone}}으로 연락 주세요. {{brandName}}이 책임지고 도와드리겠습니다.</p>",
+    "faqs": [
+      {
+        "question": "?????? 비용은 어떻게 산정되나요?",
+        "answer": "평수, 업종, 원상복구 범위에 따라 달라집니다. {{brandName}}은 무료 현장 방문 견적을 제공하며, 폐업지원금 활용 시 실제 부담을 줄일 수 있습니다."
+      },
+      {
+        "question": "폐업지원금과 함께 ??????가 가능한가요?",
+        "answer": "네. {{brandName}}은 폐업지원금 신청부터 철거·원상복구까지 원스톱으로 지원합니다. 최대 {{supportMax}}까지 안내받으실 수 있습니다."
+      },
+      {
+        "question": "?????? 상담은 어떻게 하나요?",
+        "answer": "전화 {{phone}}로 상담 후 무료 현장 방문 견적을 진행합니다. 폐업 일정과 철거 범위를 알려주시면 맞춤 안내해 드립니다."
+      }
+    ],
+    "localPartners": [
+      {
+        "type": "타일업체",
+        "name": "라임데코타일",
+        "address": "서울특별시 중구 세종대로18길 28",
+        "placeUrl": "https://map.naver.com/p/search/%EB%9D%BC%EC%9E%84%EB%8D%B0%EC%BD%94%ED%83%80%EC%9D%BC%20%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C%20%EC%A4%91%EA%B5%AC%20%EC%84%B8%EC%A2%85%EB%8C%80%EB%A1%9C18%EA%B8%B8%2028"
+      },
+      {
+        "type": "도배업체",
+        "name": "신한벽지",
+        "address": "서울특별시 중구 을지로 194 1층",
+        "placeUrl": "https://map.naver.com/p/search/%EC%8B%A0%ED%95%9C%EB%B2%BD%EC%A7%80%20%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C%20%EC%A4%91%EA%B5%AC%20%EC%9D%84%EC%A7%80%EB%A1%9C%20194%201%EC%B8%B5"
+      },
+      {
+        "type": "장판업체",
+        "name": "영진벽지",
+        "address": "서울특별시 중구 을지로 193",
+        "placeUrl": "https://map.naver.com/p/search/%EC%98%81%EC%A7%84%EB%B2%BD%EC%A7%80%20%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C%20%EC%A4%91%EA%B5%AC%20%EC%9D%84%EC%A7%80%EB%A1%9C%20193"
+      },
+      {
+        "type": "철물점",
+        "name": "서울전기철물",
+        "address": "서울특별시 중구 명동10길 19-3",
+        "placeUrl": "https://map.naver.com/p/search/%EC%84%9C%EC%9A%B8%EC%A0%84%EA%B8%B0%EC%B2%A0%EB%AC%BC%20%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C%20%EC%A4%91%EA%B5%AC%20%EB%AA%85%EB%8F%9910%EA%B8%B8%2019-3"
+      }
+    ],
+    "imageIndex": 15,
+    "createdAt": "2026-07-03T10:41:20.025Z",
+    "updatedAt": "2026-07-03T10:41:20.025Z"
+  }
+]

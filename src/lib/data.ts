@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { isBlobConfigured, readBlobText, writeBlobText } from "./blob-storage";
 import { isR2Configured, r2Key, readR2Text, writeR2Text } from "./r2";
 
 export interface SeoFaq {
@@ -62,17 +63,31 @@ function normalizeKey(value: string): string {
   }
 }
 
+function parseJson<T>(raw: string, fallback: T): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 async function readJson<T>(filename: string, fallback: T): Promise<T> {
   if (isR2Configured()) {
     const raw = await readR2Text(r2Key("data", filename));
-    if (raw) {
-      try {
-        return JSON.parse(raw) as T;
-      } catch {
-        return fallback;
-      }
-    }
+    if (raw) return parseJson(raw, fallback);
     return fallback;
+  }
+
+  if (isBlobConfigured()) {
+    const raw = await readBlobText(filename);
+    if (raw) return parseJson(raw, fallback);
+    const filePath = path.join(DATA_DIR, filename);
+    try {
+      const localRaw = await fs.readFile(filePath, "utf-8");
+      return parseJson(localRaw, fallback);
+    } catch {
+      return fallback;
+    }
   }
 
   const filePath = path.join(DATA_DIR, filename);
@@ -91,12 +106,30 @@ async function readJson<T>(filename: string, fallback: T): Promise<T> {
   return fallback;
 }
 
+export class DataStorageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DataStorageError";
+  }
+}
+
 async function writeJson<T>(filename: string, data: T): Promise<void> {
   const content = JSON.stringify(data, null, 2);
 
   if (isR2Configured()) {
     await writeR2Text(r2Key("data", filename), content);
     return;
+  }
+
+  if (isBlobConfigured()) {
+    await writeBlobText(filename, content);
+    return;
+  }
+
+  if (process.env.VERCEL === "1") {
+    throw new DataStorageError(
+      "Vercel에서는 SEO 데이터 저장을 위해 Blob Storage 또는 R2 설정이 필요합니다. Vercel 대시보드 → Storage → Blob을 연결하거나 R2 환경변수를 설정하세요."
+    );
   }
 
   const filePath = path.join(DATA_DIR, filename);

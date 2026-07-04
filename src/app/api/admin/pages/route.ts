@@ -101,12 +101,14 @@ export async function POST(req: NextRequest) {
 
     await savePage(page);
     await consumeSeoQuota();
-    try {
-      await enqueueCollectionRequest(pageId);
-    } catch (enqueueError) {
-      console.error("Auto collection enqueue failed:", enqueueError);
+    const enqueueResult = await enqueueCollectionRequest(pageId, page);
+    if (!enqueueResult.ok) {
+      console.error("Auto collection enqueue failed:", enqueueResult.message);
     }
-    return NextResponse.json(page);
+    return NextResponse.json({
+      ...page,
+      collectionEnqueued: enqueueResult.ok,
+    });
   } catch (error) {
     if (error instanceof DataStorageError) {
       return NextResponse.json({ error: error.message }, { status: 503 });

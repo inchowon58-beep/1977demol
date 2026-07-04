@@ -4,6 +4,7 @@ import {
   type CollectionJob,
   type CollectionJobStatus,
   type CollectionQueueData,
+  type SeoPage,
 } from "./data";
 import { getSettings } from "./data";
 import { getSiteConfig } from "./site-config";
@@ -137,15 +138,21 @@ export async function getCollectionStatusMap(): Promise<Map<string, CollectionPa
   return map;
 }
 
-export async function enqueueCollectionRequest(pageId: string): Promise<{
+export async function enqueueCollectionRequest(
+  pageId: string,
+  knownPage?: SeoPage
+): Promise<{
   ok: boolean;
   message: string;
   job?: CollectionJob;
 }> {
-  const { getPages } = await import("./data");
-  const pages = await getPages();
-  const page = pages.find((p) => p.id === pageId);
+  let page = knownPage;
   if (!page) {
+    const { getPages } = await import("./data");
+    const pages = await getPages();
+    page = pages.find((p) => p.id === pageId);
+  }
+  if (!page || page.id !== pageId) {
     return { ok: false, message: "페이지를 찾을 수 없습니다." };
   }
 

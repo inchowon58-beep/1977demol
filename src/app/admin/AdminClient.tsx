@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { guidePageUrl } from "@/lib/constants";
+import RankingHistoryModal from "@/components/RankingHistoryModal";
 
 interface SeoPage {
   id: string;
@@ -10,6 +11,14 @@ interface SeoPage {
   keyword: string;
   title: string;
   createdAt: string;
+}
+
+interface RankingSummary {
+  pageId: string;
+  keyword: string;
+  rank: number | null;
+  change: number | null;
+  checkedAt: string | null;
 }
 
 interface SeoQuota {
@@ -34,6 +43,20 @@ export default function AdminClient() {
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState("");
   const [copiedPageId, setCopiedPageId] = useState<string | null>(null);
+  const [rankings, setRankings] = useState<Map<string, RankingSummary>>(new Map());
+  const [rankingsUpdated, setRankingsUpdated] = useState<string | null>(null);
+  const [hasNaverApi, setHasNaverApi] = useState(true);
+  const [rankModal, setRankModal] = useState<{ pageId: string; keyword: string } | null>(null);
+
+  function formatRank(rank: number | null): string {
+    if (rank === null) return "-";
+    return `${rank}위`;
+  }
+
+  function formatRankChange(change: number | null): string {
+    if (change === null || change === 0) return "";
+    return change > 0 ? ` ▲${change}` : ` ▼${Math.abs(change)}`;
+  }
 
   useEffect(() => {
     loadData();
@@ -42,10 +65,11 @@ export default function AdminClient() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pagesRes, quotaRes, configRes] = await Promise.all([
+      const [pagesRes, quotaRes, configRes, rankingsRes] = await Promise.all([
         fetch("/api/admin/pages"),
         fetch("/api/admin/seo-quota"),
         fetch("/api/site-config"),
+        fetch("/api/admin/seo-rankings"),
       ]);
       if (pagesRes.status === 401) {
         window.location.href = "/";
@@ -56,6 +80,12 @@ export default function AdminClient() {
       if (configRes.ok) {
         const config = await configRes.json();
         setBrandName(config.brandName || "");
+      }
+      if (rankingsRes.ok) {
+        const data = await rankingsRes.json();
+        setRankings(new Map(data.summaries.map((s: RankingSummary) => [s.pageId, s])));
+        setRankingsUpdated(data.lastUpdated || null);
+        setHasNaverApi(data.hasNaverApi !== false);
       }
     } catch {
       setMessage("데이터 로드 실패");
@@ -206,25 +236,65 @@ export default function AdminClient() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-6">
-          <h2 className="font-bold text-dark mb-4">생성된 SEO 페이지 ({pages.length})</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <h2 className="font-bold text-dark">생성된 SEO 페이지 ({pages.length})</h2>
+            {rankingsUpdated && (
+              <p className="text-xs text-gray-400">
+                순위 갱신: {new Date(rankingsUpdated).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · 하루 2회 자동 확인
+              </p>
+            )}
+          </div>
+          {!hasNaverApi && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              Naver 검색 API가 설정되지 않아 순위 확인이 불가합니다. 마스터 설정에서 Client ID/Secret을 등록하세요.
+            </p>
+          )}
           {loading ? (
             <p className="text-gray-400">로딩 중...</p>
           ) : pages.length === 0 ? (
             <p className="text-gray-400">아직 생성된 페이지가 없습니다.</p>
           ) : (
             <div className="space-y-3">
-              {pages.map((page) => (
+              {pages.map((page) => {
+                const rankInfo = rankings.get(page.id);
+                return (
                 <div
                   key={page.id}
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border border-gray-100 rounded-xl"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium text-dark text-sm">{page.title}</p>
                     <p className="text-xs text-gray-400 mt-1 break-all">
                       {page.keyword} · {guidePageUrl(page.slug)}
                     </p>
+                    {hasNaverApi && (
+                      <p className="text-xs mt-2">
+                        <span className="text-gray-500">네이버 순위 </span>
+                        <span className="font-semibold text-orange">
+                          {formatRank(rankInfo?.rank ?? null)}
+                        </span>
+                        {rankInfo?.change != null && rankInfo.change !== 0 && (
+                          <span
+                            className={
+                              rankInfo.change > 0 ? "text-emerald-600" : "text-red-500"
+                            }
+                          >
+                            {formatRankChange(rankInfo.change)}
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
+                    {hasNaverApi && (
+                      <button
+                        type="button"
+                        onClick={() => setRankModal({ pageId: page.id, keyword: page.keyword })}
+                        className="text-xs px-3 py-1.5 border border-orange/40 text-orange rounded-lg hover:bg-orange/5"
+                      >
+                        순위변동 확인
+                      </button>
+                    )}
                     <Link
                       href={guidePageUrl(page.slug)}
                       target="_blank"
@@ -247,11 +317,20 @@ export default function AdminClient() {
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {rankModal && (
+        <RankingHistoryModal
+          pageId={rankModal.pageId}
+          keyword={rankModal.keyword}
+          onClose={() => setRankModal(null)}
+        />
+      )}
     </div>
   );
 }

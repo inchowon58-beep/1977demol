@@ -198,3 +198,28 @@ export async function getSettings(): Promise<Settings> {
 export async function saveSettings(settings: Settings): Promise<void> {
   await writeJson("settings.json", settings);
 }
+
+export interface RankingCheck {
+  at: string;
+  rank: number | null;
+}
+
+export interface PageRankingRecord {
+  pageId: string;
+  keyword: string;
+  slug: string;
+  checks: RankingCheck[];
+}
+
+export interface RankingsData {
+  updatedAt: string;
+  records: PageRankingRecord[];
+}
+
+export async function getRankings(): Promise<RankingsData> {
+  return readJson<RankingsData>("rankings.json", { updatedAt: "", records: [] });
+}
+
+export async function saveRankings(data: RankingsData): Promise<void> {
+  await writeJson("rankings.json", data);
+}

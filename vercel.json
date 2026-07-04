@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/seo-rankings",
+      "schedule": "0 0,12 * * *"
+    }
+  ]
+}

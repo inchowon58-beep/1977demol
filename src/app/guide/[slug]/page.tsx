@@ -14,6 +14,7 @@ import { extractRegionFromKeyword } from "@/lib/region-parse";
 import { getNearbyRegionLinks } from "@/lib/nearby-regions";
 import NearbyRegionsSection from "@/components/NearbyRegionsSection";
 import LocalPartnersSection from "@/components/LocalPartnersSection";
+import { buildSeoBrowserTitle } from "@/lib/seo-keyword";
 import { ensureLocalPartners } from "@/lib/seo-local-partners";
 
 export const dynamic = "force-dynamic";
@@ -28,14 +29,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!page) return { title: "페이지를 찾을 수 없습니다" };
 
   const resolved = resolveSeoPage(page, config);
-  return buildPageMetadata(config, {
-    title: resolved.title,
-    description: resolved.description,
-    path: guidePageUrl(page.slug),
-    ogPath: `/guide/${page.slug}/opengraph-image`,
-    type: "article",
-    keywords: [page.keyword, "폐업철거", config.brandName],
-  });
+  const browserTitle = buildSeoBrowserTitle(resolved.title, config.brandName);
+  return {
+    ...buildPageMetadata(config, {
+      title: resolved.title,
+      description: resolved.description,
+      path: guidePageUrl(page.slug),
+      ogPath: `/guide/${page.slug}/opengraph-image`,
+      type: "article",
+      keywords: [page.keyword, "폐업철거", config.brandName],
+    }),
+    title: { absolute: browserTitle },
+  };
 }
 
 export default async function GuidePage({ params }: Props) {

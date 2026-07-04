@@ -52,8 +52,7 @@ export function dedupeRegionInText(text: string, region: string | null): string 
   const esc = escapeRegExp(region);
   let result = text.trim().replace(/\s+/g, " ");
 
-  // "자양동 자양동" / "자양동 자양동철거업체"
-  result = result.replace(new RegExp(`^${esc}\\s+${esc}(?=[가-힣])`, "i"), region);
+  result = result.replace(new RegExp(`^${esc}\\s+${esc}(?=[가-힣])`, "gi"), region);
   result = result.replace(new RegExp(`(${esc})\\s+\\1`, "gi"), "$1");
 
   const compact = result.replace(/\s/g, "");
@@ -78,7 +77,12 @@ export function normalizeSeoKeyword(keyword: string): string {
   return insertSpacesForKeyword(fixedCompact, region);
 }
 
-/** 지역명을 제외한 서비스 문구 (제목 조합용) */
+export function extractRegionForKeyword(keyword: string): string | null {
+  const normalized = normalizeSeoKeyword(keyword);
+  return extractRegionFromKeyword(normalized.replace(/\s/g, ""));
+}
+
+/** 지역명을 제외한 서비스 문구 (제목·본문 조합용) */
 export function extractServicePhrase(keyword: string, region: string | null): string {
   const normalized = normalizeSeoKeyword(keyword);
   if (!region) return normalized;
@@ -95,7 +99,7 @@ export function extractServicePhrase(keyword: string, region: string | null): st
 /** 제목·설명용 핵심 키워드 (지역 1회) */
 export function buildSeoCorePhrase(keyword: string): string {
   const normalized = normalizeSeoKeyword(keyword);
-  const region = extractRegionFromKeyword(normalized.replace(/\s/g, ""));
+  const region = extractRegionForKeyword(keyword);
   return dedupeRegionInText(normalized, region);
 }
 
@@ -103,69 +107,143 @@ export function polishSeoText(text: string, region: string | null): string {
   return dedupeRegionInText(text, region);
 }
 
-const TITLE_TEMPLATES: ((phrase: string, region: string | null) => string)[] = [
-  (phrase, region) =>
-    `${region ? `${region} ` : ""}${phrase} | {{brandName}}`.trim(),
-  (phrase) => `{{brandName}} · ${phrase} 무료 현장 견적`,
-  (phrase, region) =>
-    `${region ? `${region} ` : ""}${phrase} — 폐업지원금·철거 원스톱`.trim(),
-  (phrase) => `${phrase} 전문 시공 | {{brandName}}`,
-  (phrase, region) =>
-    `${region ? `${region} ` : ""}폐업철거 ${phrase} | {{brandName}}`.trim(),
-  (phrase) => `{{brandName}} ${phrase} 비용·일정 상담`,
-  (phrase, region) =>
-    `${phrase} 맞춤 견적${region ? ` (${region})` : ""} | {{brandName}}`,
-  (phrase) => `${phrase} · 철거·원상복구 {{brandName}}`,
-  (phrase, region) =>
-    `${region ? `${region} ` : ""}${phrase} 현장 안내 | {{brandName}}`.trim(),
-  (phrase) => `{{brandName}} | ${phrase} 지원금·견적`,
-];
-
-/** 최종 제목 — 지역 중복·템플릿 중복 prefix 제거 */
-export function finalizeSeoTitle(title: string, keyword: string): string {
-  const region = extractRegionFromKeyword(
-    normalizeSeoKeyword(keyword).replace(/\s/g, "")
-  );
-  let result = dedupeRegionInText(title.trim(), region);
-
-  if (region) {
-    const esc = escapeRegExp(region);
-    result = result.replace(new RegExp(`^${esc}\\s+${esc}`, "i"), region);
-    result = dedupeRegionInText(result, region);
-  }
-
-  return result.slice(0, 60);
+export function polishSeoHtmlContent(html: string, keyword: string): string {
+  const region = extractRegionForKeyword(keyword);
+  return dedupeRegionInText(html, region);
 }
 
-/** 키워드·해시 기반 SEO 제목 (페이지마다 다른 패턴) */
+/** 제목에서 상호명 제거 (메타 template에서 1회만 붙임) */
+export function stripBrandFromTitle(title: string, brandName: string): string {
+  if (!title || !brandName) return title.trim();
+
+  let result = title.trim();
+  const esc = escapeRegExp(brandName);
+
+  const suffixPatterns = [
+    new RegExp(`\\s*\\|\\s*${esc}\\s*$`, "i"),
+    new RegExp(`\\s*-\\s*${esc}\\s*$`, "i"),
+    new RegExp(`\\s*·\\s*${esc}\\s*$`, "i"),
+  ];
+  for (const pattern of suffixPatterns) {
+    result = result.replace(pattern, "");
+  }
+
+  result = result.replace(
+    new RegExp(`(${esc})(\\s*[|·-]\\s*\\1)+`, "gi"),
+    "$1"
+  );
+
+  return result.trim();
+}
+
+export function dedupeBrandInTitle(title: string, brandName: string): string {
+  return stripBrandFromTitle(title, brandName);
+}
+
+/** 제목에 지역 1회 포함 */
+export function ensureRegionInTitle(
+  title: string,
+  keyword: string,
+  region: string | null
+): string {
+  if (!region) return title;
+
+  const deduped = dedupeRegionInText(title, region);
+  if (deduped.includes(region)) return deduped;
+
+  const phrase = extractServicePhrase(keyword, region);
+  return `${region} ${phrase}`.trim();
+}
+
+/** 페이지 표시용 SEO 제목 (지역 1회, 상호 없음) */
+export function buildSeoPageTitle(
+  titleAfterTokens: string,
+  keyword: string,
+  brandName?: string
+): string {
+  const normalizedKeyword = normalizeSeoKeyword(keyword);
+  const region = extractRegionForKeyword(normalizedKeyword);
+
+  let title = titleAfterTokens.trim();
+  if (brandName) {
+    title = stripBrandFromTitle(title, brandName);
+  }
+  title = dedupeRegionInText(title, region);
+  title = ensureRegionInTitle(title, normalizedKeyword, region);
+  if (brandName) {
+    title = stripBrandFromTitle(title, brandName);
+  }
+
+  return title.slice(0, 55);
+}
+
+/** 브라우저 탭용 — 상호 1회만 */
+export function buildSeoBrowserTitle(pageTitle: string, brandName: string): string {
+  const base = stripBrandFromTitle(pageTitle, brandName);
+  return `${base} | ${brandName}`;
+}
+
+const TITLE_TEMPLATES: ((phrase: string, region: string | null) => string)[] = [
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase}`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} 무료 현장 견적`.trim(),
+  (phrase, region) =>
+    `${region ? `${region} ` : ""}${phrase} — 폐업지원금·철거 원스톱`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} 전문 시공`.trim(),
+  (phrase, region) =>
+    `${region ? `${region} ` : ""}폐업철거 ${phrase}`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} 비용·일정 상담`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} 맞춤 견적`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} · 철거·원상복구`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} 현장 안내`.trim(),
+  (phrase, region) => `${region ? `${region} ` : ""}${phrase} 지원금·견적`.trim(),
+];
+
+export function finalizeSeoTitle(title: string, keyword: string): string {
+  const normalizedKeyword = normalizeSeoKeyword(keyword);
+  const region = extractRegionForKeyword(normalizedKeyword);
+  let result = title
+    .trim()
+    .replace(/\{\{brandName\}\}/gi, "")
+    .replace(/\{\{companyName\}\}/gi, "")
+    .replace(/\s*[|·-]\s*$/g, "")
+    .trim();
+  result = dedupeRegionInText(result, region);
+  result = ensureRegionInTitle(result, normalizedKeyword, region);
+  return result.slice(0, 55);
+}
+
 export function generateVariedSeoTitle(
   keyword: string,
   region: string | null,
   aiTitle?: string
 ): string {
-  const phrase = extractServicePhrase(keyword, region);
+  const resolvedRegion = region || extractRegionForKeyword(keyword);
+  const phrase = extractServicePhrase(keyword, resolvedRegion);
   const idx = hashText(`${keyword}-${phrase}-title`) % TITLE_TEMPLATES.length;
-  const templateTitle = TITLE_TEMPLATES[idx](phrase, region);
+  const templateTitle = TITLE_TEMPLATES[idx](phrase, resolvedRegion);
 
   if (!aiTitle?.trim()) {
     return finalizeSeoTitle(templateTitle, keyword);
   }
 
-  const polishedAi = polishSeoText(aiTitle.trim(), region);
+  const polishedAi = polishSeoText(aiTitle.trim(), resolvedRegion);
   const compactAi = polishedAi.replace(/\s/g, "");
   const aiLooksDuplicate =
-    !!region &&
-    (new RegExp(`${escapeRegExp(region)}\\s+${escapeRegExp(region)}`, "i").test(
-      polishedAi
-    ) ||
-      compactAi.includes(region + region));
+    !!resolvedRegion &&
+    (new RegExp(
+      `${escapeRegExp(resolvedRegion)}\\s+${escapeRegExp(resolvedRegion)}`,
+      "i"
+    ).test(polishedAi) ||
+      compactAi.includes(resolvedRegion + resolvedRegion));
 
   const aiTooGeneric =
     polishedAi.includes("견적 저렴한") ||
     polishedAi.includes("견적 지원금") ||
-    (polishedAi.match(/\|/g)?.length ?? 0) > 1;
+    (polishedAi.match(/\|/g)?.length ?? 0) > 0;
 
-  if (aiLooksDuplicate || aiTooGeneric || polishedAi.length > 60) {
+  const aiMissingRegion = !!resolvedRegion && !polishedAi.includes(resolvedRegion);
+
+  if (aiLooksDuplicate || aiTooGeneric || aiMissingRegion || polishedAi.length > 55) {
     return finalizeSeoTitle(templateTitle, keyword);
   }
 

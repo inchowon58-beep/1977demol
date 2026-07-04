@@ -131,12 +131,16 @@ export default function AdminClient() {
       .slice(0, 5);
   }, [pages, rankings]);
 
-  const totalListPages = Math.max(1, Math.ceil(pages.length / LIST_PAGE_SIZE));
+  const sortedPages = useMemo(() => {
+    return [...pages].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [pages]);
+
+  const totalListPages = Math.max(1, Math.ceil(sortedPages.length / LIST_PAGE_SIZE));
 
   const paginatedPages = useMemo(() => {
     const start = (listPage - 1) * LIST_PAGE_SIZE;
-    return pages.slice(start, start + LIST_PAGE_SIZE);
-  }, [pages, listPage]);
+    return sortedPages.slice(start, start + LIST_PAGE_SIZE);
+  }, [sortedPages, listPage]);
 
   useEffect(() => {
     if (listPage > totalListPages) {
@@ -171,6 +175,7 @@ export default function AdminClient() {
         const page = await res.json();
         setMessage(`"${page.title}" SEO 페이지가 생성되었습니다.`);
         setKeyword("");
+        setListPage(1);
         loadData();
       } else {
         const err = await res.json().catch(() => ({}));

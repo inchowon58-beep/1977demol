@@ -8,6 +8,13 @@ import {
 } from "./site-config-types";
 import { getImageIndexFromSeed, getImageUrl } from "./site-images";
 import { enrichSeoContentWithImages } from "./seo-content-images";
+import {
+  buildSeoPageTitle,
+  normalizeSeoKeyword,
+  polishSeoHtmlContent,
+  polishSeoText,
+  extractRegionForKeyword,
+} from "./seo-keyword";
 
 export type { SiteConfig, PublicSiteConfig };
 export { DEFAULT_SITE_CONFIG, phoneToTel, toPublicConfig };
@@ -87,15 +94,19 @@ export interface ResolvedSeoPage extends Omit<SeoPage, "imageUrl" | "imageIndex"
 
 export function resolveSeoPage(page: SeoPage, config: SiteConfig): ResolvedSeoPage {
   const seed = page.slug || page.keyword;
+  const keyword = normalizeSeoKeyword(page.keyword);
+  const region = extractRegionForKeyword(keyword) || page.regionName || null;
   const tokenized = applySiteTokens(page.content, config);
+  const polishedContent = polishSeoHtmlContent(tokenized, keyword);
+
   return {
     ...page,
-    title: applySiteTokens(page.title, config),
-    description: applySiteTokens(page.description, config),
-    content: enrichSeoContentWithImages(tokenized, page.keyword, config, seed),
+    title: buildSeoPageTitle(applySiteTokens(page.title, config), keyword, config.brandName),
+    description: polishSeoText(applySiteTokens(page.description, config), region),
+    content: enrichSeoContentWithImages(polishedContent, keyword, config, seed),
     faqs: (page.faqs || []).map((f) => ({
-      question: applySiteTokens(f.question, config),
-      answer: applySiteTokens(f.answer, config),
+      question: polishSeoText(applySiteTokens(f.question, config), region),
+      answer: polishSeoText(applySiteTokens(f.answer, config), region),
     })),
     imageUrl: getPageImageUrl(page, config),
   };

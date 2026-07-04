@@ -1,12 +1,13 @@
 import type { SiteConfig } from "./site-config-types";
 import type { SeoFaq } from "./data";
-import { extractRegionFromKeyword } from "./region-parse";
 import {
   buildSeoCorePhrase,
   extractServicePhrase,
   generateVariedSeoTitle,
   normalizeSeoKeyword,
+  polishSeoHtmlContent,
   polishSeoText,
+  extractRegionForKeyword,
 } from "./seo-keyword";
 
 interface GenerateOptions {
@@ -38,6 +39,9 @@ const CONTENT_RULES = `
 - 제목: 지역명을 두 번 반복하지 말 것 (예: "자양동 자양동철거" 금지 → "자양동철거" 한 번만)
 - 제목: "견적 저렴한 곳", "견적 지원금" 같은 뻔한 문구만 반복하지 말고, 키워드·지역·서비스 특성이 드러나게 매번 다른 표현 사용
 - 제목: 다른 페이지와 같은 패턴·같은 문장 구조 금지
+- 제목: {{brandName}}·상호명은 제목에 넣지 말 것 (시스템이 자동 추가)
+- 제목: 반드시 지역명 1회 포함 (지역 맥락이 있을 때)
+- 본문 h2/h3: 지역명 2회 연속 금지 (예: "상봉리 상봉리 철거" 금지)
 `;
 
 const WRITING_ANGLES = [
@@ -88,7 +92,7 @@ export async function generateSeoContent({
 
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(apiKey);
-  const region = extractRegionFromKeyword(keyword.replace(/\s/g, ""));
+  const region = extractRegionForKeyword(keyword);
   const angle = pickAngle(keyword);
   const uniqueSeed = `${keyword}-${hashKeyword(keyword)}`;
   const titleStyleHint =
@@ -124,7 +128,7 @@ ${CONTENT_RULES}
 
 JSON 형식으로만 응답:
 {
-  "title": "60자 이내 SEO 제목 — 지역명 1회만, {{brandName}} 토큰 사용 가능, 매번 다른 문장 구조",
+  "title": "55자 이내 SEO 제목 — 지역 1회, 상호명·| 구분자 없이, 매번 다른 문장 구조",
   "description": "150자 이내 메타 설명 (토큰 사용 가능)",
   "slug": "영문 소문자 URL slug",
   "content": "HTML 본문",
@@ -156,7 +160,7 @@ JSON 형식으로만 응답:
     return {
       title: generateVariedSeoTitle(keyword, region, parsed.title),
       description: polishSeoText(parsed.description, region),
-      content: parsed.content,
+      content: polishSeoHtmlContent(parsed.content, keyword),
       slug: parsed.slug,
       faqs: normalizeFaqs(parsed.faqs, keyword, site),
     };
@@ -176,7 +180,7 @@ function normalizeFaqs(
 }
 
 export function buildDefaultFaqs(keyword: string, site: SiteConfig): SeoFaq[] {
-  const region = extractRegionFromKeyword(keyword);
+  const region = extractRegionForKeyword(keyword);
   const regionNote = region ? `${region} 지역 ` : "";
 
   const faqSets: SeoFaq[][] = [
@@ -232,10 +236,11 @@ type FallbackBuilder = (keyword: string, region: string | null) => string;
 
 const FALLBACK_VARIANTS: FallbackBuilder[] = [
   (keyword, region) => {
+    const core = buildSeoCorePhrase(keyword);
     const loc = region ? `${region} ` : "";
     return `
-<h2>${loc}${keyword} — {{brandName}} 맞춤 안내</h2>
-<p>{{companyName}} {{brandName}}은 ${region ? `${region}을 포함한 ` : ""}전국 폐업철거 현장을 다루며, ${keyword} 문의가 많은 편입니다. 상가 유형마다 주방·냉난방·마감재 구성이 달라 동일 평수라도 견적 차이가 날 수 있습니다.</p>
+<h2>${core} — {{brandName}} 맞춤 안내</h2>
+<p>{{companyName}} {{brandName}}은 ${region ? `${region}을 포함한 ` : ""}전국 폐업철거 현장을 다루며, ${core} 문의가 많은 편입니다. 상가 유형마다 주방·냉난방·마감재 구성이 달라 동일 평수라도 견적 차이가 날 수 있습니다.</p>
 <p>대표 {{representative}} 팀이 현장 실측 후 철거·원상복구·폐기물 반출을 한 번에 정리해 드립니다. 먼저 {{phone}}로 희망 일정과 평수를 알려주시면 빠르게 안내합니다.</p>
 {{image1}}
 
@@ -273,9 +278,10 @@ const FALLBACK_VARIANTS: FallbackBuilder[] = [
   },
 
   (keyword, region) => {
-    const loc = region || "해당 지역";
+    const core = buildSeoCorePhrase(keyword);
+    const loc = region ? `${region} ` : "";
     return `
-<h2>${loc} ${keyword} 현장에서 자주 나오는 질문</h2>
+<h2>${core} 현장에서 자주 나오는 질문</h2>
 <p>폐업을 앞둔 사업자분들이 가장 많이 묻는 것은 "얼마나 걸리나"와 "지원금을 쓸 수 있나"입니다. {{brandName}}은 {{phone}} 상담 시 이 두 가지를 먼저 정리해 드립니다.</p>
 <p>{{companyName}}은 음식점·카페·학원·사무실 등 업종별 철거 경험이 풍부하며, ${keyword} 키워드로 찾으신 분들께 현장 맞춤 견적을 제공합니다.</p>
 {{image1}}
@@ -307,8 +313,9 @@ const FALLBACK_VARIANTS: FallbackBuilder[] = [
   },
 
   (keyword, region) => {
+    const core = buildSeoCorePhrase(keyword);
     return `
-<h2>{{brandName}}이 ${region ? region + " " : ""}${keyword}를 다루는 방식</h2>
+<h2>{{brandName}}이 ${core}를 다루는 방식</h2>
 <p>철거는 단순 해체가 아니라 임대차 종료·지원금·민원까지 연결된 프로젝트입니다. {{companyName}}은 현장 사진과 항목 리스트를 기반으로 투명한 견적을 제공합니다.</p>
 <p>키워드 ${keyword}로 검색하신 분들께는 폐업 일정, 평수, 업종 세 가지를 먼저 확인한 뒤 맞춤 안내를 드립니다.</p>
 {{image1}}
@@ -342,9 +349,10 @@ const FALLBACK_VARIANTS: FallbackBuilder[] = [
   },
 
   (keyword, region) => {
-    const area = region ? `${region} 일대 ` : "";
+    const core = buildSeoCorePhrase(keyword);
+    const area = region ? `${region} ` : "";
     return `
-<h2>${area}${keyword} — 사업자를 위한 실전 가이드</h2>
+<h2>${core} — 사업자를 위한 실전 가이드</h2>
 <p>폐업 후 철거를 미루면 임대료와 관리비 부담이 커집니다. {{brandName}}은 {{phone}} 접수 후 빠르면 당일 방문 견적 일정을 잡아 드립니다.</p>
 <p>{{companyName}} 대표 {{representative}}는 상가 철거 현장에서 발생하는 변수(숨은 배관, 석면 의심 자재 등)를 미리 점검해 일정 지연을 줄입니다.</p>
 {{image1}}
@@ -380,18 +388,18 @@ function generateFallbackContent(
   keyword: string,
   site: SiteConfig
 ): GeneratedSeoContent {
-  const region = extractRegionFromKeyword(keyword.replace(/\s/g, ""));
+  const region = extractRegionForKeyword(keyword);
   const variantIdx = hashKeyword(keyword) % FALLBACK_VARIANTS.length;
   const content = FALLBACK_VARIANTS[variantIdx](keyword, region);
 
   const titleVariants = [
     (k: string, r: string | null) => generateVariedSeoTitle(k, r),
     (k: string, r: string | null) =>
-      generateVariedSeoTitle(k, r, `${extractServicePhrase(k, r)} 무료 방문 견적 | {{brandName}}`),
+      generateVariedSeoTitle(k, r, `${extractServicePhrase(k, r)} 무료 방문 견적`),
     (k: string, r: string | null) =>
-      generateVariedSeoTitle(k, r, `{{brandName}} · ${extractServicePhrase(k, r)} 현장 맞춤`),
+      generateVariedSeoTitle(k, r, `${extractServicePhrase(k, r)} 현장 맞춤`),
     (k: string, r: string | null) =>
-      generateVariedSeoTitle(k, r, `${extractServicePhrase(k, r)} — {{brandName}}`),
+      generateVariedSeoTitle(k, r, `${extractServicePhrase(k, r)} — 전문 시공`),
   ];
   const descVariants = [
     (k: string, r: string | null) =>
@@ -410,7 +418,7 @@ function generateFallbackContent(
   return {
     title: titleVariants[tIdx](keyword, region),
     description: polishSeoText(descVariants[dIdx](keyword, region), region),
-    content,
+    content: polishSeoHtmlContent(content, keyword),
     faqs: buildDefaultFaqs(keyword, site),
   };
 }

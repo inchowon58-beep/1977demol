@@ -14,6 +14,7 @@ import { extractRegionFromKeyword } from "@/lib/region-parse";
 import { getNearbyRegionLinks } from "@/lib/nearby-regions";
 import NearbyRegionsSection from "@/components/NearbyRegionsSection";
 import LocalPartnersSection from "@/components/LocalPartnersSection";
+import QuickInquiryForm from "@/components/QuickInquiryForm";
 import { buildSeoBrowserTitle } from "@/lib/seo-keyword";
 import { ensureLocalPartners } from "@/lib/seo-local-partners";
 
@@ -105,6 +106,13 @@ export default async function GuidePage({ params }: Props) {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-10 lg:py-16">
+        <QuickInquiryForm
+          keyword={page.keyword}
+          pageSlug={page.slug}
+          pageTitle={resolved.title}
+          brandName={config.brandName}
+        />
+
         <div
           className="prose-seo bg-white rounded-2xl p-6 lg:p-10 shadow-sm"
           dangerouslySetInnerHTML={{ __html: resolved.content }}

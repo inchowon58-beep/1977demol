@@ -323,3 +323,63 @@ export async function getGenerationQueue(): Promise<GenerationQueueData> {
 export async function saveGenerationQueue(data: GenerationQueueData): Promise<void> {
   await writeJson("generation-queue.json", data);
 }
+
+export type InquiryLeadStatus = "new" | "read" | "done";
+
+export interface InquiryLead {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  businessType: string;
+  area: string;
+  message: string;
+  keyword: string;
+  pageSlug: string;
+  pageTitle: string;
+  referrer: string;
+  ip: string;
+  userAgent: string;
+  createdAt: string;
+  status: InquiryLeadStatus;
+}
+
+export async function getInquiryLeads(): Promise<InquiryLead[]> {
+  const leads = await readJson<InquiryLead[]>("inquiry-leads.json", []);
+  return [...leads].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function addInquiryLead(
+  input: Omit<InquiryLead, "id" | "createdAt" | "status">
+): Promise<InquiryLead> {
+  const leads = await getInquiryLeads();
+  const lead: InquiryLead = {
+    ...input,
+    id: `inq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    status: "new",
+  };
+  leads.unshift(lead);
+  await writeJson("inquiry-leads.json", leads);
+  return lead;
+}
+
+export async function updateInquiryLeadStatus(
+  id: string,
+  status: InquiryLeadStatus
+): Promise<boolean> {
+  const leads = await getInquiryLeads();
+  const idx = leads.findIndex((l) => l.id === id);
+  if (idx < 0) return false;
+  leads[idx] = { ...leads[idx], status };
+  await writeJson("inquiry-leads.json", leads);
+  return true;
+}
+
+export async function deleteInquiryLead(id: string): Promise<boolean> {
+  const leads = await getInquiryLeads();
+  const next = leads.filter((l) => l.id !== id);
+  if (next.length === leads.length) return false;
+  await writeJson("inquiry-leads.json", next);
+  return true;
+}

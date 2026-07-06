@@ -46,9 +46,39 @@ function validateVercelEnv(): { token: string; projectId: string; teamId?: strin
   return { token, projectId, teamId: teamId || undefined };
 }
 
+type VercelEnv = { token: string; projectId: string; teamId?: string };
+
+function buildVercelApiUrl(path: string, env: VercelEnv): URL {
+  const url = new URL(`https://api.vercel.com${path}`);
+  if (env.teamId) url.searchParams.set("teamId", env.teamId);
+  return url;
+}
+
+async function fetchProjectDomain(
+  domain: string,
+  env: VercelEnv
+): Promise<{ name: string; verified?: boolean } | null> {
+  const url = buildVercelApiUrl(
+    `/v9/projects/${encodeURIComponent(env.projectId)}/domains/${encodeURIComponent(domain)}`,
+    env
+  );
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${env.token}` },
+  });
+
+  if (!res.ok) return null;
+
+  const body = await res.json().catch(() => ({}));
+  return {
+    name: (body as { name?: string }).name || domain,
+    verified: (body as { verified?: boolean }).verified,
+  };
+}
+
 async function registerVercelDomain(domain: string): Promise<{
   ok: boolean;
-  data?: { name: string; verified?: boolean };
+  data?: { name: string; verified?: boolean; alreadyLinked?: boolean };
   error?: string;
 }> {
   const env = validateVercelEnv();
@@ -56,18 +86,24 @@ async function registerVercelDomain(domain: string): Promise<{
     return { ok: false, error: env.error };
   }
 
-  const { token, projectId, teamId } = env;
+  const existing = await fetchProjectDomain(domain, env);
+  if (existing) {
+    return {
+      ok: true,
+      data: { ...existing, alreadyLinked: true },
+    };
+  }
 
-  const url = new URL(
-    `https://api.vercel.com/v10/projects/${encodeURIComponent(projectId)}/domains`
+  const url = buildVercelApiUrl(
+    `/v10/projects/${encodeURIComponent(env.projectId)}/domains`,
+    env
   );
-  if (teamId) url.searchParams.set("teamId", teamId);
 
   try {
     const res = await fetch(url.toString(), {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${env.token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ name: domain }),
@@ -80,6 +116,25 @@ async function registerVercelDomain(domain: string): Promise<{
         (body as { error?: { message?: string } }).error?.message ||
         (body as { message?: string }).message ||
         `Vercel 도메인 등록 실패 (HTTP ${res.status})`;
+
+      const lower = raw.toLowerCase();
+      if (lower.includes("already") && lower.includes("project")) {
+        const onThisProject = await fetchProjectDomain(domain, env);
+        if (onThisProject) {
+          return {
+            ok: true,
+            data: { ...onThisProject, alreadyLinked: true },
+          };
+        }
+
+        return {
+          ok: false,
+          error:
+            `${domain} 은(는) 이미 다른 Vercel 프로젝트에 연결되어 있습니다. ` +
+            "Vercel 대시보드 → Domains(또는 해당 프로젝트 Settings → Domains)에서 기존 연결을 해제한 뒤 다시 시도하세요. " +
+            "현재 멀티테넌트 앱과 같은 프로젝트에 도메인이 있어야 합니다.",
+        };
+      }
 
       const hint =
         raw.includes("Invalid path") || raw.includes("invalid path")
@@ -172,6 +227,9 @@ export async function POST(req: NextRequest) {
     });
 
     const siteUrl = `https://${subdomain}`;
+    const vercelNote = vercel.data?.alreadyLinked
+      ? " (Vercel 도메인은 이미 연결되어 있었습니다)"
+      : "";
 
     return NextResponse.json({
       success: true,
@@ -180,7 +238,7 @@ export async function POST(req: NextRequest) {
       siteUrl,
       themeColor,
       vercelDomain: vercel.data,
-      message: `사이트가 생성되었습니다. DNS 전파 후 ${siteUrl} 에서 확인하세요.`,
+      message: `사이트가 생성되었습니다.${vercelNote} DNS 전파 후 ${siteUrl} 에서 확인하세요.`,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "사이트 생성 중 알 수 없는 오류";

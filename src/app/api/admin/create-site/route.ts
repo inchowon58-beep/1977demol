@@ -6,21 +6,57 @@ import type { CreateSiteInput, TenantContentData } from "@/types/tenant";
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 
+function sanitizeEnv(value: string | undefined): string {
+  if (!value) return "";
+  return value.trim().replace(/^["']|["']$/g, "");
+}
+
+function validateVercelEnv(): { token: string; projectId: string; teamId?: string } | { error: string } {
+  const token = sanitizeEnv(process.env.VERCEL_TOKEN);
+  const projectId = sanitizeEnv(process.env.VERCEL_PROJECT_ID);
+  const teamId = sanitizeEnv(process.env.VERCEL_TEAM_ID);
+
+  if (!token || !projectId) {
+    return {
+      error: "VERCEL_TOKEN 또는 VERCEL_PROJECT_ID 환경변수가 설정되지 않았습니다.",
+    };
+  }
+
+  if (projectId.includes("/") || projectId.startsWith("http")) {
+    return {
+      error:
+        "VERCEL_PROJECT_ID 형식이 잘못되었습니다. URL이나 '팀/프로젝트명'이 아니라 prj_로 시작하는 Project ID만 입력하세요. (Vercel → 프로젝트 → Settings → General)",
+    };
+  }
+
+  if (!projectId.startsWith("prj_")) {
+    return {
+      error:
+        "VERCEL_PROJECT_ID는 prj_로 시작해야 합니다. 프로젝트 이름(예: 1977demol)이 아니라 Settings → General의 Project ID를 복사하세요.",
+    };
+  }
+
+  if (teamId && !teamId.startsWith("team_")) {
+    return {
+      error:
+        "VERCEL_TEAM_ID는 team_로 시작해야 합니다. 개인 계정이면 VERCEL_TEAM_ID를 비우세요.",
+    };
+  }
+
+  return { token, projectId, teamId: teamId || undefined };
+}
+
 async function registerVercelDomain(domain: string): Promise<{
   ok: boolean;
   data?: { name: string; verified?: boolean };
   error?: string;
 }> {
-  const token = process.env.VERCEL_TOKEN?.trim();
-  const projectId = process.env.VERCEL_PROJECT_ID?.trim();
-  const teamId = process.env.VERCEL_TEAM_ID?.trim();
-
-  if (!token || !projectId) {
-    return {
-      ok: false,
-      error: "VERCEL_TOKEN 또는 VERCEL_PROJECT_ID 환경변수가 설정되지 않았습니다.",
-    };
+  const env = validateVercelEnv();
+  if ("error" in env) {
+    return { ok: false, error: env.error };
   }
+
+  const { token, projectId, teamId } = env;
 
   const url = new URL(
     `https://api.vercel.com/v10/projects/${encodeURIComponent(projectId)}/domains`
@@ -40,11 +76,17 @@ async function registerVercelDomain(domain: string): Promise<{
     const body = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const msg =
+      const raw =
         (body as { error?: { message?: string } }).error?.message ||
         (body as { message?: string }).message ||
         `Vercel 도메인 등록 실패 (HTTP ${res.status})`;
-      return { ok: false, error: msg };
+
+      const hint =
+        raw.includes("Invalid path") || raw.includes("invalid path")
+          ? " VERCEL_PROJECT_ID가 prj_로 시작하는지, 팀 프로젝트면 VERCEL_TEAM_ID(team_)가 맞는지 확인하세요."
+          : "";
+
+      return { ok: false, error: raw + hint };
     }
 
     return {

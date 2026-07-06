@@ -27,8 +27,10 @@ export function getSupabaseAdmin(): SupabaseClient | null {
 
 export function normalizeHostname(host: string | null | undefined): string {
   if (!host) return "";
-  const first = host.split(",")[0].trim().toLowerCase();
-  return first.replace(/^www\./, "").split(":")[0];
+  let first = host.split(",")[0].trim().toLowerCase();
+  first = first.replace(/^https?:\/\//, "");
+  first = first.replace(/^www\./, "");
+  return first.split(":")[0].replace(/\/+$/, "");
 }
 
 export async function fetchTenantByHostname(

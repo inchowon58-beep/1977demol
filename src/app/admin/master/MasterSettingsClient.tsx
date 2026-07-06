@@ -47,8 +47,17 @@ const emptySiteForm: SiteForm = {
   naverExposureId: "",
 };
 
+interface SeoQuotaPreview {
+  limit: number;
+  used: number;
+  remaining: number;
+  serviceDaysRemaining: number;
+  serviceExpiresAt: string;
+}
+
 export default function MasterSettingsClient() {
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySiteForm);
+  const [quotaPreview, setQuotaPreview] = useState<SeoQuotaPreview | null>(null);
   const [serviceExpiresAt, setServiceExpiresAt] = useState("");
   const [naverExposurePassword, setNaverExposurePassword] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -62,8 +71,35 @@ export default function MasterSettingsClient() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  async function loadQuotaPreview() {
+    const res = await fetch("/api/admin/seo-quota", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    setQuotaPreview({
+      limit: data.limit ?? 10,
+      used: data.used ?? 0,
+      remaining: data.remaining ?? 0,
+      serviceDaysRemaining: data.service?.daysRemaining ?? 0,
+      serviceExpiresAt: data.service?.expiresAt || "",
+    });
+  }
+
+  async function loadSecretFlags() {
+    const res = await fetch("/api/admin/settings", { cache: "no-store" });
+    if (res.status === 401) {
+      window.location.href = "/admin/master";
+      return;
+    }
+    if (!res.ok) return;
+    const settings = await res.json();
+    setHasApiKey(settings.hasApiKey);
+    setHasNaverApi(settings.hasNaverApi);
+    setCollectionSiteUrl(settings.collectionSiteUrl || settings.url || "");
+    setHasCollectionWorkerSecret(!!settings.hasCollectionWorkerSecret);
+  }
+
   async function loadSettings() {
-    const res = await fetch("/api/admin/settings");
+    const res = await fetch("/api/admin/settings", { cache: "no-store" });
     if (res.status === 401) {
       window.location.href = "/admin/master";
       return;
@@ -100,6 +136,7 @@ export default function MasterSettingsClient() {
 
   useEffect(() => {
     void loadSettings();
+    void loadQuotaPreview();
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -124,11 +161,33 @@ export default function MasterSettingsClient() {
         const data = await res.json();
         setMessage("마스터 설정이 저장되었습니다.");
         if (data.serviceExpiresAt) setServiceExpiresAt(data.serviceExpiresAt);
+        if (data.dailySeoLimit !== undefined) {
+          setSiteForm((prev) => ({ ...prev, dailySeoLimit: data.dailySeoLimit }));
+        }
+        if (data.serviceAvailableDays !== undefined) {
+          setSiteForm((prev) => ({
+            ...prev,
+            serviceAvailableDays: data.serviceAvailableDays,
+          }));
+        }
+        setQuotaPreview((prev) => {
+          const limit = data.dailySeoLimit ?? prev?.limit ?? siteForm.dailySeoLimit;
+          const used = prev?.used ?? 0;
+          return {
+            limit,
+            used,
+            remaining: Math.max(0, limit - used),
+            serviceDaysRemaining:
+              data.serviceDaysRemaining ?? prev?.serviceDaysRemaining ?? 0,
+            serviceExpiresAt: data.serviceExpiresAt || prev?.serviceExpiresAt || "",
+          };
+        });
         setApiKey("");
         setNaverClientId("");
         setNaverClientSecret("");
         setCollectionWorkerSecret("");
-        await loadSettings();
+        await loadSecretFlags();
+        await loadQuotaPreview();
       } else {
         setMessage("설정 저장 실패.");
       }
@@ -192,6 +251,28 @@ export default function MasterSettingsClient() {
             <Link href="/" className="text-gray-400 hover:underline">메인</Link>
           </div>
         </div>
+
+        {quotaPreview && (
+          <div className="mb-6 rounded-xl px-4 py-3 border border-orange/20 bg-white text-sm">
+            <p className="font-medium text-dark">
+              사용가능일{" "}
+              <span className="text-orange">{quotaPreview.serviceDaysRemaining}일</span>
+              {quotaPreview.serviceExpiresAt && (
+                <span className="text-gray-500 font-normal">
+                  {" "}
+                  (만료 {quotaPreview.serviceExpiresAt})
+                </span>
+              )}
+              <span className="text-gray-300 mx-2">|</span>
+              일일 생성 한도{" "}
+              <span className="text-orange">{quotaPreview.remaining}개</span>
+              <span className="text-gray-500 font-normal"> / {quotaPreview.limit}개</span>
+              <span className="text-gray-400 font-normal text-xs ml-2">
+                (오늘 {quotaPreview.used}개 사용)
+              </span>
+            </p>
+          </div>
+        )}
 
         <NaverExposureCard
           exposureId={siteForm.naverExposureId}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { guidePageUrl } from "@/lib/constants";
 import { MAX_BULK_KEYWORDS } from "@/lib/parse-keywords";
 import RankingHistoryModal from "@/components/RankingHistoryModal";
@@ -57,6 +58,7 @@ interface GenerationJobRow {
 }
 
 export default function AdminClient() {
+  const pathname = usePathname();
   const [pages, setPages] = useState<SeoPage[]>([]);
   const [keyword, setKeyword] = useState("");
   const [createMode, setCreateMode] = useState<CreateMode>("single");
@@ -106,12 +108,12 @@ export default function AdminClient() {
     try {
       const [pagesRes, quotaRes, configRes, rankingsRes, collectionRes, generationRes] =
         await Promise.all([
-        fetch("/api/admin/pages"),
-        fetch("/api/admin/seo-quota"),
-        fetch("/api/site-config"),
-        fetch("/api/admin/seo-rankings"),
-        fetch("/api/admin/collection-request"),
-        fetch("/api/admin/generation-queue"),
+        fetch("/api/admin/pages", { cache: "no-store" }),
+        fetch("/api/admin/seo-quota", { cache: "no-store" }),
+        fetch("/api/site-config", { cache: "no-store" }),
+        fetch("/api/admin/seo-rankings", { cache: "no-store" }),
+        fetch("/api/admin/collection-request", { cache: "no-store" }),
+        fetch("/api/admin/generation-queue", { cache: "no-store" }),
       ]);
       if (pagesRes.status === 401) {
         window.location.href = "/";
@@ -156,8 +158,10 @@ export default function AdminClient() {
   }
 
   useEffect(() => {
-    void loadData();
-  }, []);
+    if (pathname === "/admin") {
+      void loadData();
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const refreshQuota = () => {
@@ -165,11 +169,18 @@ export default function AdminClient() {
         void loadData();
       }
     };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void loadData();
+      }
+    };
     window.addEventListener("focus", refreshQuota);
     document.addEventListener("visibilitychange", refreshQuota);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       window.removeEventListener("focus", refreshQuota);
       document.removeEventListener("visibilitychange", refreshQuota);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
 

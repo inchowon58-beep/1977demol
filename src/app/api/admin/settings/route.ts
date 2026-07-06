@@ -6,6 +6,7 @@ import {
   computeExpiresAtFromDays,
   daysRemainingFromExpiresAt,
 } from "@/lib/service-period";
+import { resolveDailySeoLimit } from "@/lib/seo-quota";
 
 const SITE_FIELDS = [
   "brandName",
@@ -32,22 +33,25 @@ export async function GET() {
   }
   const settings = await getSettings();
   const merged = { ...DEFAULT_SITE_CONFIG, ...settings };
-  return NextResponse.json({
-    ...merged,
-    geminiApiKey: merged.geminiApiKey ? "••••••••" : "",
-    naverClientId: merged.naverClientId ? "••••••••" : "",
-    naverClientSecret: merged.naverClientSecret ? "••••••••" : "",
-    naverExposurePassword: merged.naverExposurePassword || "",
-    hasApiKey: !!merged.geminiApiKey,
-    hasNaverApi: !!(merged.naverClientId && merged.naverClientSecret),
-    hasNaverExposurePassword: !!merged.naverExposurePassword,
-    serviceExpiresAt: merged.serviceExpiresAt || "",
-    serviceDaysRemaining: daysRemainingFromExpiresAt(merged.serviceExpiresAt),
-    collectionSiteUrl: settings.collectionSiteUrl?.trim() || merged.url || "",
-    hasCollectionWorkerSecret: !!(
-      settings.collectionWorkerSecret || process.env.COLLECTION_WORKER_SECRET
-    ),
-  });
+  return NextResponse.json(
+    {
+      ...merged,
+      geminiApiKey: merged.geminiApiKey ? "••••••••" : "",
+      naverClientId: merged.naverClientId ? "••••••••" : "",
+      naverClientSecret: merged.naverClientSecret ? "••••••••" : "",
+      naverExposurePassword: merged.naverExposurePassword || "",
+      hasApiKey: !!merged.geminiApiKey,
+      hasNaverApi: !!(merged.naverClientId && merged.naverClientSecret),
+      hasNaverExposurePassword: !!merged.naverExposurePassword,
+      serviceExpiresAt: merged.serviceExpiresAt || "",
+      serviceDaysRemaining: daysRemainingFromExpiresAt(merged.serviceExpiresAt),
+      collectionSiteUrl: settings.collectionSiteUrl?.trim() || merged.url || "",
+      hasCollectionWorkerSecret: !!(
+        settings.collectionWorkerSecret || process.env.COLLECTION_WORKER_SECRET
+      ),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 export async function PUT(req: NextRequest) {
@@ -101,6 +105,9 @@ export async function PUT(req: NextRequest) {
   await saveSettings(updated);
   return NextResponse.json({
     success: true,
+    dailySeoLimit: resolveDailySeoLimit(updated),
+    serviceAvailableDays: updated.serviceAvailableDays ?? DEFAULT_SITE_CONFIG.serviceAvailableDays,
     serviceExpiresAt: updated.serviceExpiresAt,
+    serviceDaysRemaining: daysRemainingFromExpiresAt(updated.serviceExpiresAt),
   });
 }

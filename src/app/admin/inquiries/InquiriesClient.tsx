@@ -23,6 +23,8 @@ interface InquiryLead {
 
 interface InquirySummary {
   total: number;
+  thisMonth: number;
+  monthLabel: string;
   new: number;
   read: number;
   done: number;
@@ -30,11 +32,21 @@ interface InquirySummary {
 
 const STATUS_LABEL = { new: "신규", read: "확인", done: "완료" } as const;
 
+function isLeadThisMonthKst(createdAt: string): boolean {
+  const monthKey = new Date()
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" })
+    .slice(0, 7);
+  const leadMonth = new Date(createdAt)
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" })
+    .slice(0, 7);
+  return leadMonth === monthKey;
+}
+
 export default function InquiriesClient() {
   const [leads, setLeads] = useState<InquiryLead[]>([]);
   const [summary, setSummary] = useState<InquirySummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "new" | "read" | "done">("all");
+  const [filter, setFilter] = useState<"all" | "month" | "new" | "read" | "done">("all");
   const [selected, setSelected] = useState<InquiryLead | null>(null);
   const [message, setMessage] = useState("");
 
@@ -63,6 +75,7 @@ export default function InquiriesClient() {
 
   const filtered = useMemo(() => {
     if (filter === "all") return leads;
+    if (filter === "month") return leads.filter((l) => isLeadThisMonthKst(l.createdAt));
     return leads.filter((l) => l.status === filter);
   }, [leads, filter]);
 
@@ -149,10 +162,11 @@ export default function InquiriesClient() {
         </div>
 
         {summary && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
             {(
               [
-                ["all", "전체", summary.total],
+                ["month", `${summary.monthLabel}`, summary.thisMonth],
+                ["all", "전체 누적", summary.total],
                 ["new", "신규", summary.new],
                 ["read", "확인", summary.read],
                 ["done", "완료", summary.done],
@@ -164,12 +178,32 @@ export default function InquiriesClient() {
                 onClick={() => setFilter(key)}
                 className={`rounded-xl border px-4 py-3 text-left transition ${
                   filter === key
-                    ? "border-orange bg-orange/5"
-                    : "border-gray-200 bg-white hover:border-orange/30"
+                    ? key === "month"
+                      ? "border-orange bg-orange text-white"
+                      : "border-orange bg-orange/5"
+                    : key === "month"
+                      ? "border-orange/40 bg-orange/5 hover:border-orange"
+                      : "border-gray-200 bg-white hover:border-orange/30"
                 }`}
               >
-                <p className="text-xs text-gray-500">{label}</p>
-                <p className="text-2xl font-bold text-dark">{count}</p>
+                <p
+                  className={`text-xs ${filter === key && key === "month" ? "text-white/90" : key === "month" ? "text-orange font-medium" : "text-gray-500"}`}
+                >
+                  {key === "month" ? "이번달" : label}
+                </p>
+                <p
+                  className={`text-2xl font-bold ${filter === key && key === "month" ? "text-white" : "text-dark"}`}
+                >
+                  {count}
+                  {key === "month" && <span className="text-base font-bold ml-0.5">건</span>}
+                </p>
+                {key === "month" && (
+                  <p
+                    className={`text-[10px] mt-0.5 ${filter === key ? "text-white/80" : "text-gray-400"}`}
+                  >
+                    Slack 알림과 동일
+                  </p>
+                )}
               </button>
             ))}
           </div>

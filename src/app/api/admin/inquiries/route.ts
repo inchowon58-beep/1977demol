@@ -1,20 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import {
+  countInquiryLeadsThisMonthKst,
   deleteInquiryLead,
   getInquiryLeads,
   updateInquiryLeadStatus,
   type InquiryLeadStatus,
 } from "@/lib/data";
 
+function kstMonthLabel(): string {
+  const parts = new Date()
+    .toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long" })
+    .split(" ");
+  return parts.slice(0, 2).join(" ");
+}
+
 export async function GET() {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const leads = await getInquiryLeads();
+  const [leads, thisMonth] = await Promise.all([
+    getInquiryLeads(),
+    countInquiryLeadsThisMonthKst(),
+  ]);
   const summary = {
     total: leads.length,
+    thisMonth,
+    monthLabel: kstMonthLabel(),
     new: leads.filter((l) => l.status === "new").length,
     read: leads.filter((l) => l.status === "read").length,
     done: leads.filter((l) => l.status === "done").length,

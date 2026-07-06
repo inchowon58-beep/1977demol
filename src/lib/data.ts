@@ -351,6 +351,20 @@ export async function getInquiryLeads(): Promise<InquiryLead[]> {
   return [...leads].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/** KST 기준 이번 달(YYYY-MM) 접수 문의 건수 */
+export async function countInquiryLeadsThisMonthKst(): Promise<number> {
+  const monthKey = new Date()
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" })
+    .slice(0, 7);
+  const leads = await readJson<InquiryLead[]>("inquiry-leads.json", []);
+  return leads.filter((lead) => {
+    const leadMonth = new Date(lead.createdAt)
+      .toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" })
+      .slice(0, 7);
+    return leadMonth === monthKey;
+  }).length;
+}
+
 export async function addInquiryLead(
   input: Omit<InquiryLead, "id" | "createdAt" | "status">
 ): Promise<InquiryLead> {

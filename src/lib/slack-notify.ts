@@ -1,5 +1,5 @@
 import type { InquiryLead, Settings } from "./data";
-import { getSettings } from "./data";
+import { countInquiryLeadsThisMonthKst, getSettings } from "./data";
 
 export function resolveSlackWebhookUrl(settings?: Settings): string {
   const fromSettings = settings?.slackWebhookUrl?.trim();
@@ -7,11 +7,34 @@ export function resolveSlackWebhookUrl(settings?: Settings): string {
   return process.env.SLACK_INQUIRY_WEBHOOK_URL?.trim() || "";
 }
 
-function field(label: string, value: string): { type: "mrkdwn"; text: string } {
-  return {
-    type: "mrkdwn",
-    text: `*${label}*\n${value || "-"}`,
-  };
+function kstMonthLabel(): string {
+  const parts = new Date()
+    .toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long" })
+    .split(" ");
+  return parts.slice(0, 2).join(" ");
+}
+
+function formatKstDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function displayValue(value: string): string {
+  const trimmed = value.trim();
+  return trimmed || "—";
+}
+
+function optionalRow(label: string, value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return `*${label}*  ${trimmed}`;
 }
 
 export async function notifyInquiryToSlack(
@@ -24,90 +47,93 @@ export async function notifyInquiryToSlack(
 
   const brand = options?.brandName || "견적 문의";
   const siteBase = (options?.siteUrl || "").replace(/\/$/, "");
-  const adminUrl = siteBase ? `${siteBase}/admin/inquiries` : "";
   const pageUrl = siteBase && lead.pageSlug ? `${siteBase}/guide/${lead.pageSlug}` : "";
-  const createdAt = new Date(lead.createdAt).toLocaleString("ko-KR", {
-    timeZone: "Asia/Seoul",
-  });
+  const monthTotal = await countInquiryLeadsThisMonthKst();
+  const monthLabel = kstMonthLabel();
+  const createdAt = formatKstDateTime(lead.createdAt);
+
+  const customerLines = [
+    `*이름*  ${displayValue(lead.name)}`,
+    `*연락처*  ${displayValue(lead.phone)}`,
+    optionalRow("주소", lead.address),
+    optionalRow("업종", lead.businessType),
+    optionalRow("평수", lead.area),
+  ].filter((line): line is string => line !== null);
 
   const blocks: Record<string, unknown>[] = [
     {
       type: "header",
-      text: { type: "plain_text", text: `🔔 ${brand} — 새 견적 문의`, emoji: true },
+      text: { type: "plain_text", text: "📩 새 견적 문의가 접수되었습니다", emoji: true },
     },
     {
       type: "section",
-      fields: [
-        field("이름", lead.name),
-        field("연락처", lead.phone),
-        field("주소", lead.address),
-        field("업종", lead.businessType),
-        field("평수", lead.area),
-        field("키워드", lead.keyword),
-      ],
+      text: {
+        type: "mrkdwn",
+        text: `*${brand}*\n📅 *${monthLabel} 총 문의*  *${monthTotal}건*`,
+      },
+    },
+    { type: "divider" },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: ["*👤 고객 정보*", ...customerLines].join("\n"),
+      },
     },
   ];
 
-  if (lead.message) {
+  if (lead.keyword.trim()) {
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*문의내용*\n${lead.message.slice(0, 1500)}`,
+        text: `*🎯 유입 키워드*\n${lead.keyword.trim()}`,
       },
     });
   }
 
-  blocks.push({
-    type: "context",
-    elements: [
-      {
+  if (lead.message.trim()) {
+    blocks.push({
+      type: "section",
+      text: {
         type: "mrkdwn",
-        text: [
-          `접수: ${createdAt}`,
-          lead.pageTitle ? `페이지: ${lead.pageTitle}` : "",
-          lead.ip ? `IP: ${lead.ip}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
+        text: `*💬 문의내용*\n>${lead.message.trim().slice(0, 1200).replace(/\n/g, "\n>")}`,
       },
-    ],
-  });
+    });
+  }
 
-  if (adminUrl || pageUrl) {
+  const metaParts = [`🕐 ${createdAt}`];
+  if (lead.pageTitle.trim()) metaParts.push(`📄 ${lead.pageTitle.trim()}`);
+  if (lead.ip) metaParts.push(`IP ${lead.ip}`);
+
+  blocks.push(
+    { type: "divider" },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: metaParts.join("  ·  ") }],
+    }
+  );
+
+  if (pageUrl) {
     blocks.push({
       type: "actions",
       elements: [
-        ...(adminUrl
-          ? [
-              {
-                type: "button",
-                text: { type: "plain_text", text: "문의 DB 열기" },
-                url: adminUrl,
-              },
-            ]
-          : []),
-        ...(pageUrl
-          ? [
-              {
-                type: "button",
-                text: { type: "plain_text", text: "유입 페이지" },
-                url: pageUrl,
-              },
-            ]
-          : []),
+        {
+          type: "button",
+          text: { type: "plain_text", text: "🔗 유입 페이지", emoji: true },
+          url: pageUrl,
+        },
       ],
     });
   }
+
+  const fallbackText = `[${brand}] 새 견적 문의 — ${lead.name} / ${lead.phone} (${monthLabel} 총 ${monthTotal}건)`;
 
   try {
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: `[${brand}] 새 견적 문의 — ${lead.name} / ${lead.phone}`,
-        blocks,
-      }),
+      body: JSON.stringify({ text: fallbackText, blocks }),
     });
     return res.ok;
   } catch {

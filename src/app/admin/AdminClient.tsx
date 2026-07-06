@@ -35,10 +35,34 @@ interface SeoQuota {
 }
 
 const LIST_PAGE_SIZE = 10;
+const MAX_BULK_KEYWORDS = 50;
+
+type CreateMode = "single" | "bulk" | "file";
+
+interface GenerationSummary {
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  total: number;
+}
+
+interface GenerationJobRow {
+  id: string;
+  keyword: string;
+  status: string;
+  requestedAt: string;
+  error?: string;
+}
 
 export default function AdminClient() {
   const [pages, setPages] = useState<SeoPage[]>([]);
   const [keyword, setKeyword] = useState("");
+  const [createMode, setCreateMode] = useState<CreateMode>("single");
+  const [bulkText, setBulkText] = useState("");
+  const [bulkEnqueueing, setBulkEnqueueing] = useState(false);
+  const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
+  const [recentGenerationJobs, setRecentGenerationJobs] = useState<GenerationJobRow[]>([]);
   const [brandName, setBrandName] = useState("");
   const [quota, setQuota] = useState<SeoQuota | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,12 +98,14 @@ export default function AdminClient() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pagesRes, quotaRes, configRes, rankingsRes, collectionRes] = await Promise.all([
+      const [pagesRes, quotaRes, configRes, rankingsRes, collectionRes, generationRes] =
+        await Promise.all([
         fetch("/api/admin/pages"),
         fetch("/api/admin/seo-quota"),
         fetch("/api/site-config"),
         fetch("/api/admin/seo-rankings"),
         fetch("/api/admin/collection-request"),
+        fetch("/api/admin/generation-queue"),
       ]);
       if (pagesRes.status === 401) {
         window.location.href = "/";
@@ -109,6 +135,11 @@ export default function AdminClient() {
             ])
           )
         );
+      }
+      if (generationRes.ok) {
+        const gen = await generationRes.json();
+        setGenerationSummary(gen.summary);
+        setRecentGenerationJobs(gen.recent || []);
       }
     } catch {
       setMessage("데이터 로드 실패");
@@ -200,6 +231,66 @@ export default function AdminClient() {
       setMessage("생성 중 오류가 발생했습니다.");
     }
     setGenerating(false);
+  };
+
+  const handleBulkEnqueue = async (text: string) => {
+    if (!text.trim()) {
+      setMessage("등록할 키워드를 입력하거나 파일을 선택해주세요.");
+      return;
+    }
+    if (quota?.service && !quota.service.active) {
+      setMessage("사용 기간이 만료되어 등록할 수 없습니다.");
+      return;
+    }
+
+    setBulkEnqueueing(true);
+    setMessage("VM 생성 대기열에 키워드 등록 중...");
+    try {
+      const res = await fetch("/api/admin/generation-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMessage(data.message || `${data.added}개 키워드가 대기열에 등록되었습니다.`);
+        if (data.skippedReasons?.length) {
+          setMessage(
+            `${data.message} (건너뜀 ${data.skipped}건: ${data.skippedReasons.slice(0, 3).join(", ")}${data.skippedReasons.length > 3 ? "…" : ""})`
+          );
+        }
+        setBulkText("");
+        loadData();
+      } else {
+        setMessage(data.error || "대량 등록 실패.");
+      }
+    } catch {
+      setMessage("대량 등록 중 오류가 발생했습니다.");
+    }
+    setBulkEnqueueing(false);
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await handleBulkEnqueue(bulkText);
+  };
+
+  const handleTxtFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".txt")) {
+      setMessage("TXT 파일만 업로드할 수 있습니다.");
+      e.target.value = "";
+      return;
+    }
+    try {
+      const text = await file.text();
+      setBulkText(text);
+      await handleBulkEnqueue(text);
+    } catch {
+      setMessage("파일을 읽는 중 오류가 발생했습니다.");
+    }
+    e.target.value = "";
   };
 
   const handleDeletePage = async (id: string) => {
@@ -408,6 +499,51 @@ export default function AdminClient() {
 
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
           <h2 className="font-bold text-dark mb-4">SEO 페이지 생성</h2>
+
+          <div className="flex flex-wrap gap-2 mb-4">
+            {(
+              [
+                ["single", "개별 등록"],
+                ["bulk", "대량 등록 (텍스트)"],
+                ["file", "TXT 파일"],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setCreateMode(mode)}
+                className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${
+                  createMode === mode
+                    ? "bg-orange text-white border-orange"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-orange/40"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {generationSummary && generationSummary.total > 0 && (
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm">
+              <p className="font-medium text-dark mb-1">VM 자동 생성 대기열</p>
+              <p className="text-gray-600 text-xs">
+                대기 <strong className="text-orange">{generationSummary.pending}</strong>
+                {" · "}
+                생성중 <strong>{generationSummary.processing}</strong>
+                {" · "}
+                완료 <strong className="text-[#03C75A]">{generationSummary.completed}</strong>
+                {" · "}
+                실패 <strong className="text-red-500">{generationSummary.failed}</strong>
+              </p>
+              {generationSummary.pending > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  VM이 설정한 간격(랜덤)마다 1개씩 자동 생성합니다.
+                </p>
+              )}
+            </div>
+          )}
+
+          {createMode === "single" && (
           <form onSubmit={handleGenerate} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">키워드</label>
@@ -465,6 +601,61 @@ export default function AdminClient() {
               </p>
             )}
           </form>
+          )}
+
+          {createMode === "bulk" && (
+            <form onSubmit={handleBulkSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  키워드 목록 (최대 {MAX_BULK_KEYWORDS}개)
+                </label>
+                <textarea
+                  value={bulkText}
+                  onChange={(e) => setBulkText(e.target.value)}
+                  placeholder={`한 줄에 키워드 하나씩\n또는 쉼표(,)로 구분\n\n예:\n은평구철거지원금\n강동구철거지원금\n또는 은평구철거지원금, 강동구철거지원금`}
+                  rows={8}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:border-orange resize-y text-sm"
+                  disabled={!serviceActive}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={bulkEnqueueing || !serviceActive}
+                className="px-8 py-3 bg-dark text-white font-bold rounded-xl hover:bg-dark-light transition disabled:opacity-50"
+              >
+                {bulkEnqueueing ? "등록 중..." : "대량 등록 (VM 자동 생성)"}
+              </button>
+              <p className="text-xs text-gray-500">
+                즉시 생성하지 않고 VM 대기열에 등록됩니다. VM이 5~10분(설정) 간격으로 1개씩 생성합니다.
+              </p>
+            </form>
+          )}
+
+          {createMode === "file" && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  TXT 파일 업로드 (최대 {MAX_BULK_KEYWORDS}개)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  onChange={handleTxtFile}
+                  disabled={bulkEnqueueing || !serviceActive}
+                  className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-orange file:text-white file:font-bold hover:file:bg-orange-light"
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                파일 형식: 한 줄에 키워드 하나, 또는 한 줄에 쉼표(,)로 여러 키워드 구분
+              </p>
+              {bulkText && (
+                <pre className="text-xs bg-gray-50 border border-gray-100 rounded-xl p-3 max-h-32 overflow-auto whitespace-pre-wrap">
+                  {bulkText.slice(0, 500)}
+                  {bulkText.length > 500 ? "…" : ""}
+                </pre>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-6">

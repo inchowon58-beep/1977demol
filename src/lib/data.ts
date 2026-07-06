@@ -292,3 +292,34 @@ export async function getCollectionQueue(): Promise<CollectionQueueData> {
 export async function saveCollectionQueue(data: CollectionQueueData): Promise<void> {
   await writeJson("collection-queue.json", data);
 }
+
+export type GenerationJobStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface GenerationJob {
+  id: string;
+  keyword: string;
+  normalizedKeyword: string;
+  status: GenerationJobStatus;
+  requestedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  pageId?: string;
+  slug?: string;
+  error?: string;
+}
+
+export interface GenerationQueueData {
+  updatedAt: string;
+  jobs: GenerationJob[];
+}
+
+export async function getGenerationQueue(): Promise<GenerationQueueData> {
+  return readJson<GenerationQueueData>("generation-queue.json", {
+    updatedAt: "",
+    jobs: [],
+  });
+}
+
+export async function saveGenerationQueue(data: GenerationQueueData): Promise<void> {
+  await writeJson("generation-queue.json", data);
+}

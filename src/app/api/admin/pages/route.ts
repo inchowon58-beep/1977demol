@@ -1,25 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
-import { DataStorageError, getPages, savePage, deletePage } from "@/lib/data";
-import { buildSeoSlug, ensureUniqueSeoSlug } from "@/lib/seo-slug";
-import { generateSeoContent } from "@/lib/gemini";
-import { getSiteConfig } from "@/lib/site-config";
-import { getImageIndexFromSeed } from "@/lib/site-images";
-import { resolveLocalPartnersForKeyword } from "@/lib/local-business";
-import { consumeSeoQuota, getSeoQuotaStatus } from "@/lib/seo-quota";
-import { removeCollectionJobsForPage, enqueueCollectionRequest } from "@/lib/collection-queue";
+import { DataStorageError, deletePage, getPages } from "@/lib/data";
+import { createSeoPageFromKeyword, SeoCreateError } from "@/lib/seo-page-create";
+import { removeCollectionJobsForPage } from "@/lib/collection-queue";
 import { removeRankingForPage } from "@/lib/seo-ranking";
-import {
-  getServicePeriodStatus,
-} from "@/lib/service-period";
-import { normalizeSeoKeyword, finalizeSeoTitle } from "@/lib/seo-keyword";
 
-function getNaverCredentials(site: Awaited<ReturnType<typeof getSiteConfig>>) {
-  return {
-    naverClientId: site.naverClientId || process.env.NAVER_CLIENT_ID || "",
-    naverClientSecret: site.naverClientSecret || process.env.NAVER_CLIENT_SECRET || "",
-  };
-}
+export const maxDuration = 120;
 
 export async function GET() {
   if (!(await isAuthenticated())) {
@@ -40,77 +26,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "키워드를 입력해주세요" }, { status: 400 });
   }
 
-  const service = await getServicePeriodStatus();
-  if (!service.active) {
-    return NextResponse.json(
-      {
-        error:
-          "사용 기간이 만료되었습니다. 마스터 설정에서 기간 연장 후 다시 시도하세요.",
-      },
-      { status: 403 }
-    );
-  }
-
-  const quota = await getSeoQuotaStatus();
-  if (quota.remaining <= 0) {
-    return NextResponse.json(
-      {
-        error: `오늘 SEO 페이지 생성 한도(${quota.limit}개)를 모두 사용했습니다. 내일 다시 시도하거나 마스터 설정에서 한도를 조정하세요.`,
-      },
-      { status: 429 }
-    );
-  }
-
   try {
-    const trimmedKeyword = normalizeSeoKeyword(keyword.trim());
-    const site = await getSiteConfig();
-
-    const generated = await generateSeoContent({
-      keyword: trimmedKeyword,
-      apiKey: site.geminiApiKey || process.env.GEMINI_API_KEY || "",
-      site,
-    });
-
-    const now = new Date().toISOString();
-    const pageId = `page-${Date.now()}`;
-    const existingPages = await getPages();
-    const baseSlug = buildSeoSlug(trimmedKeyword, pageId, generated.slug);
-    const slug = await ensureUniqueSeoSlug(
-      baseSlug,
-      existingPages.map((p) => p.slug)
-    );
-
-    const { region, partners } = await resolveLocalPartnersForKeyword(
-      trimmedKeyword,
-      getNaverCredentials(site)
-    );
-
-    const page = {
-      id: pageId,
-      slug,
-      keyword: trimmedKeyword,
-      regionName: region || undefined,
-      title: finalizeSeoTitle(generated.title, trimmedKeyword),
-      description: generated.description,
-      content: generated.content,
-      faqs: generated.faqs,
-      localPartners: partners.length > 0 ? partners : undefined,
-      imageIndex: getImageIndexFromSeed(slug, site),
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await savePage(page);
-    await consumeSeoQuota();
-    const enqueueResult = await enqueueCollectionRequest(pageId, page);
-    if (!enqueueResult.ok) {
-      console.error("Auto collection enqueue failed:", enqueueResult.message);
-    }
+    const { page, collectionEnqueued } = await createSeoPageFromKeyword(keyword.trim());
     return NextResponse.json({
       ...page,
-      collectionEnqueued: enqueueResult.ok,
+      collectionEnqueued,
     });
   } catch (error) {
+    if (error instanceof SeoCreateError) {
+      const status =
+        error.code === "QUOTA" ? 429 : error.code === "SERVICE" ? 403 : 400;
+      return NextResponse.json({ error: error.message }, { status });
+    }
     if (error instanceof DataStorageError) {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }

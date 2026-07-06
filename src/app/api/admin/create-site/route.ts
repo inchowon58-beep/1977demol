@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthenticated, isMasterAuthenticated } from "@/lib/auth";
-import { insertTenantSiteConfig, isSubdomainTaken, normalizeHostname } from "@/lib/supabase/tenant-db";
+import {
+  getSupabaseConfigError,
+  insertTenantSiteConfig,
+  isSubdomainTaken,
+  isSupabaseConfigured,
+  normalizeHostname,
+  normalizeSupabaseUrl,
+} from "@/lib/supabase/tenant-db";
 import { pickThemeColor } from "@/lib/tenant-theme";
 import type { CreateSiteInput, TenantContentData } from "@/types/tenant";
 
@@ -11,68 +18,84 @@ function sanitizeEnv(value: string | undefined): string {
   return value.trim().replace(/^["']|["']$/g, "");
 }
 
-function validateVercelEnv(): { token: string; projectId: string; teamId?: string } | { error: string } {
+type VercelEnv = { token: string; projectRef: string; teamId?: string };
+
+function getVercelEnv(): VercelEnv | { error: string } {
   const token = sanitizeEnv(process.env.VERCEL_TOKEN);
-  const projectId = sanitizeEnv(process.env.VERCEL_PROJECT_ID);
+  const projectRef =
+    sanitizeEnv(process.env.VERCEL_PROJECT_ID) ||
+    sanitizeEnv(process.env.VERCEL_PROJECT_NAME);
   const teamId = sanitizeEnv(process.env.VERCEL_TEAM_ID);
 
-  if (!token || !projectId) {
+  if (!token || !projectRef) {
     return {
-      error: "VERCEL_TOKEN 또는 VERCEL_PROJECT_ID 환경변수가 설정되지 않았습니다.",
+      error:
+        "VERCEL_TOKEN 또는 VERCEL_PROJECT_ID가 없습니다. (프로젝트 이름도 가능: VERCEL_PROJECT_NAME)",
     };
   }
 
-  if (projectId.includes("/") || projectId.startsWith("http")) {
+  if (projectRef.includes("/") || projectRef.startsWith("http")) {
     return {
       error:
-        "VERCEL_PROJECT_ID 형식이 잘못되었습니다. URL이나 '팀/프로젝트명'이 아니라 prj_로 시작하는 Project ID만 입력하세요. (Vercel → 프로젝트 → Settings → General)",
-    };
-  }
-
-  if (!projectId.startsWith("prj_")) {
-    return {
-      error:
-        "VERCEL_PROJECT_ID는 prj_로 시작해야 합니다. 프로젝트 이름(예: 1977demol)이 아니라 Settings → General의 Project ID를 복사하세요.",
+        "VERCEL_PROJECT_ID는 prj_xxx 또는 프로젝트 이름(예: 1977demol)만 입력하세요. URL 전체는 안 됩니다.",
     };
   }
 
   if (teamId && !teamId.startsWith("team_")) {
     return {
-      error:
-        "VERCEL_TEAM_ID는 team_로 시작해야 합니다. 개인 계정이면 VERCEL_TEAM_ID를 비우세요.",
+      error: "VERCEL_TEAM_ID는 team_로 시작해야 합니다. 개인 계정이면 비우세요.",
     };
   }
 
-  return { token, projectId, teamId: teamId || undefined };
+  return { token, projectRef, teamId: teamId || undefined };
 }
 
-type VercelEnv = { token: string; projectId: string; teamId?: string };
-
-function buildVercelApiUrl(path: string, env: VercelEnv): URL {
+function buildVercelApiUrl(path: string, env: VercelEnv, teamId?: string): URL {
   const url = new URL(`https://api.vercel.com${path}`);
-  if (env.teamId) url.searchParams.set("teamId", env.teamId);
+  const tid = teamId ?? env.teamId;
+  if (tid) url.searchParams.set("teamId", tid);
   return url;
+}
+
+async function vercelJson<T>(
+  url: URL,
+  token: string,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; body: T }> {
+  const res = await fetch(url.toString(), {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+  const body = (await res.json().catch(() => ({}))) as T;
+  return { ok: res.ok, status: res.status, body };
+}
+
+function vercelErrorMessage(body: unknown, status: number): string {
+  const b = body as { error?: { message?: string }; message?: string };
+  return b.error?.message || b.message || `Vercel API 실패 (HTTP ${status})`;
 }
 
 async function fetchProjectDomain(
   domain: string,
-  env: VercelEnv
+  env: VercelEnv,
+  teamId?: string
 ): Promise<{ name: string; verified?: boolean } | null> {
   const url = buildVercelApiUrl(
-    `/v9/projects/${encodeURIComponent(env.projectId)}/domains/${encodeURIComponent(domain)}`,
-    env
+    `/v9/projects/${encodeURIComponent(env.projectRef)}/domains/${encodeURIComponent(domain)}`,
+    env,
+    teamId
   );
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${env.token}` },
-  });
+  const { ok, body } = await vercelJson<{ name?: string; verified?: boolean }>(url, env.token);
+  if (!ok) return null;
 
-  if (!res.ok) return null;
-
-  const body = await res.json().catch(() => ({}));
   return {
-    name: (body as { name?: string }).name || domain,
-    verified: (body as { verified?: boolean }).verified,
+    name: body.name || domain,
+    verified: body.verified,
   };
 }
 
@@ -81,87 +104,124 @@ async function registerVercelDomain(domain: string): Promise<{
   data?: { name: string; verified?: boolean; alreadyLinked?: boolean };
   error?: string;
 }> {
-  const env = validateVercelEnv();
+  const env = getVercelEnv();
   if ("error" in env) {
     return { ok: false, error: env.error };
   }
 
-  const existing = await fetchProjectDomain(domain, env);
-  if (existing) {
-    return {
-      ok: true,
-      data: { ...existing, alreadyLinked: true },
-    };
-  }
+  const teamAttempts: (string | undefined)[] = env.teamId
+    ? [env.teamId, undefined]
+    : [undefined];
 
-  const url = buildVercelApiUrl(
-    `/v10/projects/${encodeURIComponent(env.projectId)}/domains`,
-    env
-  );
+  for (const teamId of teamAttempts) {
+    const existing = await fetchProjectDomain(domain, env, teamId);
+    if (existing) {
+      return { ok: true, data: { ...existing, alreadyLinked: true } };
+    }
 
-  try {
-    const res = await fetch(url.toString(), {
+    const url = buildVercelApiUrl(
+      `/v10/projects/${encodeURIComponent(env.projectRef)}/domains`,
+      env,
+      teamId
+    );
+
+    const { ok, status, body } = await vercelJson<{
+      name?: string;
+      verified?: boolean;
+      error?: { message?: string };
+      message?: string;
+    }>(url, env.token, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.token}`,
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({ name: domain }),
     });
 
-    const body = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const raw =
-        (body as { error?: { message?: string } }).error?.message ||
-        (body as { message?: string }).message ||
-        `Vercel 도메인 등록 실패 (HTTP ${res.status})`;
-
-      const lower = raw.toLowerCase();
-      if (lower.includes("already") && lower.includes("project")) {
-        const onThisProject = await fetchProjectDomain(domain, env);
-        if (onThisProject) {
-          return {
-            ok: true,
-            data: { ...onThisProject, alreadyLinked: true },
-          };
-        }
-
-        return {
-          ok: false,
-          error:
-            `${domain} 은(는) 이미 다른 Vercel 프로젝트에 연결되어 있습니다. ` +
-            "Vercel 대시보드 → Domains(또는 해당 프로젝트 Settings → Domains)에서 기존 연결을 해제한 뒤 다시 시도하세요. " +
-            "현재 멀티테넌트 앱과 같은 프로젝트에 도메인이 있어야 합니다.",
-        };
-      }
-
-      const hint =
-        raw.includes("Invalid path") || raw.includes("invalid path")
-          ? " VERCEL_PROJECT_ID가 prj_로 시작하는지, 팀 프로젝트면 VERCEL_TEAM_ID(team_)가 맞는지 확인하세요."
-          : "";
-
-      return { ok: false, error: raw + hint };
+    if (ok) {
+      return {
+        ok: true,
+        data: {
+          name: body.name || domain,
+          verified: body.verified,
+        },
+      };
     }
 
-    return {
-      ok: true,
-      data: {
-        name: (body as { name?: string }).name || domain,
-        verified: (body as { verified?: boolean }).verified,
-      },
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Vercel API 호출 중 오류",
-    };
+    const raw = vercelErrorMessage(body, status);
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("already") && lower.includes("project")) {
+      const onProject = await fetchProjectDomain(domain, env, teamId);
+      if (onProject) {
+        return { ok: true, data: { ...onProject, alreadyLinked: true } };
+      }
+      return {
+        ok: false,
+        error:
+          `${domain} 은(는) 다른 Vercel 프로젝트에 연결되어 있습니다. ` +
+          "Vercel Domains에서 해제 후 다시 시도하세요.",
+      };
+    }
+
+    const isInvalidPath = lower.includes("invalid path");
+    if (isInvalidPath && teamId && teamAttempts.length > 1) {
+      continue;
+    }
+
+    if (isInvalidPath) {
+      return {
+        ok: false,
+        error:
+          `${raw} — VERCEL_PROJECT_ID(또는 VERCEL_PROJECT_NAME)와 VERCEL_TEAM_ID를 확인하세요. ` +
+          "개인 계정이면 VERCEL_TEAM_ID를 삭제하고, prj_로 시작하는 Project ID를 사용하세요.",
+      };
+    }
+
+    return { ok: false, error: raw };
   }
+
+  return { ok: false, error: "Vercel 도메인 등록에 실패했습니다." };
+}
+
+/** 마스터용 — Supabase·Vercel 환경변수 연결 상태 확인 */
+export async function GET() {
+  if (!(await isAuthenticated()) || !(await isMasterAuthenticated())) {
+    return NextResponse.json({ error: "마스터 권한이 필요합니다." }, { status: 401 });
+  }
+
+  const supabaseError = getSupabaseConfigError();
+  const vercel = getVercelEnv();
+
+  return NextResponse.json({
+    supabase: {
+      configured: isSupabaseConfigured() && !supabaseError,
+      error: supabaseError,
+      urlHost: process.env.SUPABASE_URL
+        ? normalizeSupabaseUrl(process.env.SUPABASE_URL).replace(/^https?:\/\//, "")
+        : null,
+    },
+    vercel: {
+      configured: !("error" in vercel),
+      error: "error" in vercel ? vercel.error : null,
+      projectRef: "error" in vercel ? null : vercel.projectRef,
+      hasTeamId: "error" in vercel ? false : !!vercel.teamId,
+    },
+  });
 }
 
 export async function POST(req: NextRequest) {
   if (!(await isAuthenticated()) || !(await isMasterAuthenticated())) {
     return NextResponse.json({ error: "마스터 권한이 필요합니다." }, { status: 401 });
+  }
+
+  const supabaseError = getSupabaseConfigError();
+  if (supabaseError || !isSupabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error:
+          supabaseError ||
+          "Supabase가 설정되지 않았습니다. Vercel에 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY를 추가하세요.",
+      },
+      { status: 503 }
+    );
   }
 
   let body: CreateSiteInput;
@@ -201,19 +261,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const vercel = await registerVercelDomain(subdomain);
-    let vercelNote = "";
-
-    if (!vercel.ok) {
-      const err = vercel.error || "Vercel 도메인 등록에 실패했습니다.";
-      if (err.includes("다른 Vercel 프로젝트")) {
-        return NextResponse.json({ error: err }, { status: 502 });
-      }
-      vercelNote = ` (Vercel 자동 등록 생략: ${err})`;
-    } else if (vercel.data?.alreadyLinked) {
-      vercelNote = " (Vercel 도메인은 이미 연결되어 있었습니다)";
-    }
-
     const themeColor = pickThemeColor(subdomain);
     const contentData: TenantContentData = {
       keywords,
@@ -231,6 +278,20 @@ export async function POST(req: NextRequest) {
       slack_webhook: slackWebhook || null,
     });
 
+    const vercel = await registerVercelDomain(subdomain);
+    let vercelNote = "";
+
+    if (!vercel.ok) {
+      const err = vercel.error || "Vercel 도메인 등록에 실패했습니다.";
+      if (err.includes("다른 Vercel 프로젝트")) {
+        vercelNote = ` (경고: ${err} — DB에는 저장됨)`;
+      } else {
+        vercelNote = ` (Vercel 자동 등록 생략: ${err})`;
+      }
+    } else if (vercel.data?.alreadyLinked) {
+      vercelNote = " (Vercel 도메인은 이미 연결되어 있었습니다)";
+    }
+
     const siteUrl = `https://${subdomain}`;
 
     return NextResponse.json({
@@ -241,7 +302,7 @@ export async function POST(req: NextRequest) {
       themeColor,
       vercelDomain: vercel.ok ? vercel.data : undefined,
       vercelSkipped: !vercel.ok,
-      message: `사이트가 생성되었습니다.${vercelNote} DNS 전파 후 ${siteUrl} 에서 확인하세요.`,
+      message: `사이트가 Supabase에 저장되었습니다.${vercelNote} ${siteUrl} 에서 확인하세요.`,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "사이트 생성 중 알 수 없는 오류";

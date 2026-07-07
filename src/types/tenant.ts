@@ -19,13 +19,29 @@ export interface TenantContentData {
   exposureMode?: "cpa" | "company";
   /** classic | modern | bold */
   designVariant?: "classic" | "modern" | "bold";
+  /** 생성 시 고정 난수 시드 — 레이아웃·이미지 재현용 */
+  layoutSeed?: number;
+  headerStyle?: "sticky" | "overlay" | "minimal" | "hidden";
+  footerStyle?: "full" | "compact" | "minimal";
+  homeLeadBlocks?: ("hero" | "companyStrip")[];
+  sectionOrder?: string[];
+  hiddenSections?: string[];
   heroBadge?: string;
   heroIntro?: string;
   heroClosing?: string;
   heroLead?: string;
+  heroImageIndex?: number;
+  supportImageIndex?: number;
   aboutText?: string;
+  supportBlurb?: string;
   whyUsTitle?: string;
+  whyUsItems?: { num: string; title: string; highlight: string; sub: string }[];
+  processSteps?: { step: string; title: string; desc: string }[];
+  reviews?: { name: string; business: string; text: string; rating: number }[];
+  reviewsSatisfaction?: string;
   stats?: { label: string; value: string; suffix: string }[];
+  casesCount?: number;
+  casesItems?: { id: string; title: string; type: string; imageIndex: number }[];
 }
 
 export interface TenantSiteConfigRow {

@@ -34,10 +34,19 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { config, tenant, theme } = await getResolvedSiteConfig();
+  const { config, tenant, tenantUi, theme } = await getResolvedSiteConfig();
   const showCompany = showCompanyContact(config.exposureMode);
   const naverVerification =
     tenant?.naver_verification?.trim() || NAVER_SITE_VERIFICATION;
+  const headerStyle = tenantUi?.headerStyle || "sticky";
+  const footerStyle = tenantUi?.footerStyle || "full";
+  const bodyClasses = [
+    "antialiased",
+    tenantUi?.designVariant ? `tenant-${tenantUi.designVariant}` : "",
+    headerStyle === "overlay" ? "tenant-header-overlay" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const businessJsonLd = showCompany
     ? {
@@ -96,17 +105,11 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body
-        className={`antialiased${
-          tenant?.content_data?.designVariant
-            ? ` tenant-${tenant.content_data.designVariant}`
-            : ""
-        }`}
-      >
-        <SiteConfigProvider config={config} tenantUi={tenant?.content_data ?? null}>
-          <Header />
-          <main className="pb-24">{children}</main>
-          <FooterWrapper />
+      <body className={bodyClasses}>
+        <SiteConfigProvider config={config} tenantUi={tenantUi}>
+          {headerStyle !== "hidden" && <Header headerStyle={headerStyle} />}
+          <main className={headerStyle === "overlay" ? "pb-24" : "pb-24"}>{children}</main>
+          <FooterWrapper footerStyle={footerStyle} />
           <FixedContactBar />
         </SiteConfigProvider>
       </body>

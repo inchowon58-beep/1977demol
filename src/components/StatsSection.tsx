@@ -2,11 +2,9 @@ import { getResolvedSiteConfig } from "@/utils/siteConfig";
 import { getDefaultStats } from "@/lib/tenant-content";
 
 export default async function StatsSection() {
-  const { tenant } = await getResolvedSiteConfig();
-  const stats = tenant?.content_data?.stats?.length
-    ? tenant.content_data.stats
-    : getDefaultStats();
-  const variant = tenant?.content_data?.designVariant || "classic";
+  const { tenantUi } = await getResolvedSiteConfig();
+  const stats = tenantUi?.stats?.length ? tenantUi.stats : getDefaultStats();
+  const variant = tenantUi?.designVariant || "classic";
 
   return (
     <section className={`bg-dark text-white py-12 lg:py-16 tenant-stats-${variant}`}>

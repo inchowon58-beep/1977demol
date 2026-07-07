@@ -7,6 +7,7 @@ export default function WhyUsSection() {
   const site = useSiteConfig();
   const ui = useTenantUi();
   const variant = ui?.designVariant || "classic";
+  const items = ui?.whyUsItems?.length ? ui.whyUsItems : WHY_US;
 
   return (
     <section className={`py-16 lg:py-24 bg-white tenant-why-${variant}`}>
@@ -26,7 +27,7 @@ export default function WhyUsSection() {
             variant === "modern" ? "md:gap-4" : ""
           }`}
         >
-          {WHY_US.map((item) => (
+          {items.map((item) => (
             <div
               key={item.num}
               className={`text-center p-8 border border-gray-100 ${

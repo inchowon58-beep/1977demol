@@ -8,13 +8,16 @@ import {
   isSupabaseConfigured,
   normalizeHostname,
 } from "@/lib/supabase/tenant-db";
-import type { TenantSiteConfigRow, TenantThemeColor } from "@/types/tenant";
+import type { TenantSiteConfigRow, TenantThemeColor, TenantContentData } from "@/types/tenant";
+import { resolveTenantContentData } from "@/lib/tenant-content";
 
 export interface ResolvedSiteContext {
   /** UI·기능에 쓰는 최종 SiteConfig (테넌트 병합 또는 레거시) */
   config: SiteConfig;
   /** Supabase 테넌트 행 — 없으면 null (레거시 단일 사이트) */
   tenant: TenantSiteConfigRow | null;
+  /** 테넌트 UI·레이아웃 (레거시는 null) */
+  tenantUi: TenantContentData | null;
   theme: TenantThemeColor | null;
   isTenant: boolean;
   hostname: string;
@@ -91,6 +94,7 @@ export async function getResolvedSiteConfig(
     return {
       config: baseConfig,
       tenant: null,
+      tenantUi: null,
       theme: null,
       isTenant: false,
       hostname,
@@ -103,15 +107,26 @@ export async function getResolvedSiteConfig(
       return {
         config: baseConfig,
         tenant: null,
+        tenantUi: null,
         theme: null,
         isTenant: false,
         hostname,
       };
     }
 
+    const tenantUi = resolveTenantContentData(
+      tenant.content_data,
+      tenant.subdomain,
+      tenant.site_name,
+      tenant.content_data?.keywords,
+      tenant.content_data?.body,
+      baseConfig.imageCount
+    );
+
     return {
-      config: mergeTenantIntoConfig(tenant, baseConfig),
-      tenant,
+      config: mergeTenantIntoConfig({ ...tenant, content_data: tenantUi }, baseConfig),
+      tenant: { ...tenant, content_data: tenantUi },
+      tenantUi,
       theme: tenant.theme_color,
       isTenant: true,
       hostname,
@@ -120,6 +135,7 @@ export async function getResolvedSiteConfig(
     return {
       config: baseConfig,
       tenant: null,
+      tenantUi: null,
       theme: null,
       isTenant: false,
       hostname,
@@ -146,9 +162,19 @@ export async function getResolvedSiteConfigForTenant(
     ),
   } as SiteConfig;
 
+  const tenantUi = resolveTenantContentData(
+    tenant.content_data,
+    tenant.subdomain,
+    tenant.site_name,
+    tenant.content_data?.keywords,
+    tenant.content_data?.body,
+    baseConfig.imageCount
+  );
+
   return {
-    config: mergeTenantIntoConfig(tenant, baseConfig),
-    tenant,
+    config: mergeTenantIntoConfig({ ...tenant, content_data: tenantUi }, baseConfig),
+    tenant: { ...tenant, content_data: tenantUi },
+    tenantUi,
     theme: tenant.theme_color,
     isTenant: true,
     hostname: normalizeHostname(tenant.subdomain),

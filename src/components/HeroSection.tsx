@@ -8,8 +8,8 @@ export default async function HeroSection() {
   const site = await getSiteConfig();
   const showCompany = showCompanyContact(site.exposureMode);
   const { getResolvedSiteConfig } = await import("@/utils/siteConfig");
-  const { tenant } = await getResolvedSiteConfig();
-  const ui = tenant?.content_data;
+  const { tenant, tenantUi } = await getResolvedSiteConfig();
+  const ui = tenantUi ?? tenant?.content_data;
 
   const badge = ui?.heroBadge || "폐업 철거, 부담 없이 마무리";
   const intro = ui?.heroIntro || "폐업지원금 신청부터 철거·원상복구까지";
@@ -22,7 +22,7 @@ export default async function HeroSection() {
       className={`hero-section relative min-h-[85vh] flex items-center overflow-hidden tenant-hero-${variant}`}
     >
       <Image
-        src={getImageUrl(1, site)}
+        src={getImageUrl(ui?.heroImageIndex || 1, site)}
         alt={`${site.brandName} 폐업철거 전문`}
         fill
         className="object-cover"

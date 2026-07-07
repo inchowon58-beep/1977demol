@@ -265,14 +265,16 @@ export async function POST(req: NextRequest) {
     }
 
     const themeColor = pickThemeColor(subdomain);
+    const settings = await getSettings();
+    const imageCount = Math.max(4, settings.imageCount ?? 20);
     const contentData: TenantContentData = pickTenantContentPackage(
       subdomain,
       siteName,
       keywords,
-      bodyContent
+      bodyContent,
+      imageCount
     );
 
-    const settings = await getSettings();
     const defaultLimit = resolveDailySeoLimit(settings);
     const dailySeoLimitRaw = body.dailySeoLimit;
     const dailySeoLimit =

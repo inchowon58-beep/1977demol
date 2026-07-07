@@ -209,3 +209,15 @@ body.tenant-bold .tenant-stats-bold {
   border-bottom: 4px solid var(--orange);
 }
 
+body.tenant-header-overlay main {
+  padding-top: 0;
+}
+
+body.tenant-header-overlay .hero-section {
+  min-height: 92vh;
+}
+
+body.tenant-header-overlay header + main .hero-section {
+  margin-top: 0;
+}
+

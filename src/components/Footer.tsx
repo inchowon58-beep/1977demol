@@ -6,20 +6,16 @@ import { useSiteConfig } from "@/components/SiteConfigProvider";
 import InquiryLinkButton from "@/components/InquiryLinkButton";
 import LoginModal from "./LoginModal";
 import { showCompanyContact } from "@/lib/exposure-mode";
-import type { FooterStyle } from "@/lib/tenant-content";
 
 interface FooterProps {
   isLoggedIn?: boolean;
-  footerStyle?: FooterStyle;
 }
 
-export default function Footer({ isLoggedIn = false, footerStyle = "full" }: FooterProps) {
+export default function Footer({ isLoggedIn = false }: FooterProps) {
   const site = useSiteConfig();
   const [showLogin, setShowLogin] = useState(false);
   const [loggedIn, setLoggedIn] = useState(isLoggedIn);
   const showCompany = showCompanyContact(site.exposureMode);
-  const isMinimal = footerStyle === "minimal";
-  const isCompact = footerStyle === "compact";
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -27,35 +23,11 @@ export default function Footer({ isLoggedIn = false, footerStyle = "full" }: Foo
     window.location.reload();
   };
 
-  if (isMinimal) {
-    return (
-      <>
-        <footer className="bg-dark text-white pb-20">
-          <div className="max-w-7xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs text-gray-400">
-              © 2026 {site.brandName}. All rights reserved.
-            </p>
-            <InquiryLinkButton context="header" className="text-xs" />
-          </div>
-        </footer>
-        {showLogin && (
-          <LoginModal
-            onClose={() => setShowLogin(false)}
-            onSuccess={() => {
-              setLoggedIn(true);
-              setShowLogin(false);
-            }}
-          />
-        )}
-      </>
-    );
-  }
-
   return (
     <>
-      <footer id="contact" className="bg-dark text-white pb-20">
+      <footer id="contact" className="bg-dark text-white pb-20 shrink-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
-          <div className={`grid gap-10 ${showCompany && !isCompact ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          <div className={`grid gap-10 ${showCompany ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
             <div>
               <h3 className="text-xl font-bold mb-1">{site.brandName}</h3>
               {showCompany && (
@@ -76,7 +48,7 @@ export default function Footer({ isLoggedIn = false, footerStyle = "full" }: Foo
               )}
             </div>
 
-            {showCompany && !isCompact ? (
+            {showCompany ? (
               <>
                 <div>
                   <h4 className="font-semibold mb-4 text-orange">Contact</h4>
@@ -132,7 +104,7 @@ export default function Footer({ isLoggedIn = false, footerStyle = "full" }: Foo
               © 2026 {showCompany ? site.companyName : site.brandName}. All rights reserved.
             </p>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0">
               {loggedIn ? (
                 <>
                   <Link

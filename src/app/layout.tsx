@@ -39,7 +39,6 @@ export default async function RootLayout({
   const naverVerification =
     tenant?.naver_verification?.trim() || NAVER_SITE_VERIFICATION;
   const headerStyle = tenantUi?.headerStyle || "sticky";
-  const footerStyle = tenantUi?.footerStyle || "full";
   const bodyClasses = [
     "antialiased",
     tenantUi?.designVariant ? `tenant-${tenantUi.designVariant}` : "",
@@ -105,11 +104,11 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={bodyClasses}>
+      <body className={`${bodyClasses} min-h-screen flex flex-col`}>
         <SiteConfigProvider config={config} tenantUi={tenantUi}>
           {headerStyle !== "hidden" && <Header headerStyle={headerStyle} />}
-          <main className={headerStyle === "overlay" ? "pb-24" : "pb-24"}>{children}</main>
-          <FooterWrapper footerStyle={footerStyle} />
+          <main className="flex-1 pb-24">{children}</main>
+          <FooterWrapper />
           <FixedContactBar />
         </SiteConfigProvider>
       </body>

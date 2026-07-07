@@ -2,8 +2,6 @@ import type { TenantContentData } from "@/types/tenant";
 
 export type DesignVariant = "classic" | "modern" | "bold";
 export type HeaderStyle = "sticky" | "overlay" | "minimal" | "hidden";
-export type FooterStyle = "full" | "compact" | "minimal";
-export type HomeLeadBlock = "hero" | "companyStrip";
 export type HomeSectionId =
   | "stats"
   | "support"
@@ -104,7 +102,6 @@ function extractRegion(keywords: string, siteName: string): string {
 
 const DESIGN_VARIANTS: DesignVariant[] = ["classic", "modern", "bold"];
 const HEADER_STYLES: HeaderStyle[] = ["sticky", "overlay", "minimal", "hidden"];
-const FOOTER_STYLES: FooterStyle[] = ["full", "compact", "minimal"];
 
 const HERO_BADGES = [
   "폐업 철거, 부담 없이 마무리",
@@ -294,12 +291,6 @@ const CASE_TEMPLATES = [
   { title: "{region} 프랜차이즈 매장 철거", type: "철거·원상복구" },
 ];
 
-const HOME_LEAD_ORDERS: HomeLeadBlock[][] = [
-  ["hero"],
-  ["hero", "companyStrip"],
-  ["companyStrip", "hero"],
-];
-
 function pickCases(
   rng: () => number,
   count: number,
@@ -333,10 +324,6 @@ function pickSectionOrder(rng: () => number): HomeSectionId[] {
   return core;
 }
 
-function pickHomeLeadBlocks(rng: () => number): HomeLeadBlock[] {
-  return pickOne(HOME_LEAD_ORDERS, rng);
-}
-
 /** 서브도메인 시드로 사이트마다 다른 문구·레이아웃·이미지 패키지 생성 */
 export function pickTenantContentPackage(
   seed: string,
@@ -361,8 +348,6 @@ export function pickTenantContentPackage(
   return {
     layoutSeed,
     headerStyle: pickOne(HEADER_STYLES, rng),
-    footerStyle: pickOne(FOOTER_STYLES, rng),
-    homeLeadBlocks: pickHomeLeadBlocks(rng),
     sectionOrder: pickSectionOrder(rng),
     designVariant: pickOne(DESIGN_VARIANTS, rng),
     heroBadge: pickOne(HERO_BADGES, rng),

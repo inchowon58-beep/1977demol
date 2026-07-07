@@ -9,7 +9,6 @@ import ReviewsSection from "@/components/ReviewsSection";
 import PartnerSection from "@/components/PartnerSection";
 import CtaSection from "@/components/CtaSection";
 import HomeInquirySection from "@/components/HomeInquirySection";
-import CompanyStrip from "@/components/CompanyStrip";
 import { getResolvedSiteConfig } from "@/utils/siteConfig";
 import {
   DEFAULT_HOME_SECTION_ORDER,
@@ -50,18 +49,5 @@ export default async function HomeSections() {
 }
 
 export async function HomeLeadBlocks() {
-  const { tenantUi } = await getResolvedSiteConfig();
-  const blocks = tenantUi?.homeLeadBlocks?.length
-    ? tenantUi.homeLeadBlocks
-    : ["hero"];
-
-  return (
-    <>
-      {blocks.map((block) => {
-        if (block === "companyStrip") return <CompanyStrip key="companyStrip" />;
-        if (block === "hero") return <HeroSection key="hero" />;
-        return null;
-      })}
-    </>
-  );
+  return <HeroSection />;
 }

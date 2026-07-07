@@ -39,10 +39,11 @@ function optionalRow(label: string, value: string): string | null {
 
 export async function notifyInquiryToSlack(
   lead: InquiryLead,
-  options?: { brandName?: string; siteUrl?: string }
+  options?: { brandName?: string; siteUrl?: string; webhookUrl?: string }
 ): Promise<boolean> {
   const settings = await getSettings();
-  const webhookUrl = resolveSlackWebhookUrl(settings);
+  const webhookUrl =
+    options?.webhookUrl?.trim() || resolveSlackWebhookUrl(settings);
   if (!webhookUrl) return false;
 
   const brand = options?.brandName || "견적 문의";

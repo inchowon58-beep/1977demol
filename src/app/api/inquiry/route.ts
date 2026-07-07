@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addInquiryLead } from "@/lib/data";
-import { getSiteConfig } from "@/lib/site-config";
 import { notifyInquiryToSlack } from "@/lib/slack-notify";
+import { getResolvedSiteConfig } from "@/utils/siteConfig";
 
 function normalizePhone(value: string): string {
   return value.replace(/[^\d]/g, "");
@@ -59,10 +59,11 @@ export async function POST(req: NextRequest) {
     userAgent,
   });
 
-  const config = await getSiteConfig();
+  const { config, tenant } = await getResolvedSiteConfig();
   void notifyInquiryToSlack(lead, {
     brandName: config.brandName,
     siteUrl: config.url,
+    webhookUrl: tenant?.slack_webhook?.trim() || undefined,
   });
 
   return NextResponse.json({

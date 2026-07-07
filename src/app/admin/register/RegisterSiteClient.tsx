@@ -67,6 +67,9 @@ export default function RegisterSiteClient() {
               Supabase + Vercel API로 서브도메인 사이트를 자동 생성합니다.
             </p>
           </div>
+          <Link href="/admin/sites" className="text-sm text-orange hover:underline shrink-0">
+            등록 사이트 목록
+          </Link>
           <Link href="/admin/master" className="text-sm text-orange hover:underline shrink-0">
             ← 마스터
           </Link>
@@ -88,6 +91,14 @@ export default function RegisterSiteClient() {
               >
                 {result.siteUrl} 바로가기 →
               </a>
+            )}
+            {result.siteId && (
+              <Link
+                href={`/admin/sites/${result.siteId}`}
+                className="mt-4 inline-block text-sm text-orange hover:underline"
+              >
+                Slack·네이버 설정 추가하기 →
+              </Link>
             )}
             {result.themeColor && (
               <div className="mt-6 flex justify-center gap-2">

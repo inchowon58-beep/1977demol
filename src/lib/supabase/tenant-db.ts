@@ -126,6 +126,50 @@ export async function insertTenantSiteConfig(
   return data as TenantSiteConfigRow;
 }
 
+export async function listAllTenants(): Promise<TenantSiteConfigRow[]> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("site_configs")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Supabase 조회 실패: ${error.message}`);
+  }
+
+  return (data || []) as TenantSiteConfigRow[];
+}
+
+export async function updateTenantSiteConfig(
+  id: string,
+  patch: Partial<Omit<TenantSiteConfigRow, "id" | "created_at">>
+): Promise<TenantSiteConfigRow> {
+  const configError = getSupabaseConfigError();
+  if (configError) {
+    throw new Error(configError);
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    throw new Error("Supabase 클라이언트를 초기화할 수 없습니다.");
+  }
+
+  const { data, error } = await supabase
+    .from("site_configs")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Supabase 저장 실패: ${error.message}`);
+  }
+
+  return data as TenantSiteConfigRow;
+}
+
 export async function isSubdomainTaken(subdomain: string): Promise<boolean> {
   const supabase = getSupabaseAdmin();
   if (!supabase) {

@@ -63,3 +63,35 @@ export interface CreateSiteResult {
   error?: string;
   vercelDomain?: { name: string; verified?: boolean };
 }
+
+export interface TenantSiteSummary {
+  id: string;
+  siteName: string;
+  subdomain: string;
+  siteUrl: string;
+  createdAt: string;
+  hasSlackWebhook: boolean;
+  hasNaverVerification: boolean;
+  dailySeoLimit: number | null;
+  designVariant: string | null;
+}
+
+export interface TenantSiteDetail extends TenantSiteSummary {
+  keywords: string;
+  bodyContent: string;
+  tagline: string;
+  description: string;
+  naverVerification: string;
+  seoQuotaUsedToday: number;
+}
+
+export interface UpdateTenantSiteInput {
+  siteName?: string;
+  keywords?: string;
+  bodyContent?: string;
+  tagline?: string;
+  description?: string;
+  slackWebhook?: string;
+  naverVerification?: string;
+  dailySeoLimit?: number | string | null;
+}

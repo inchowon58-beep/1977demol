@@ -257,6 +257,9 @@ export default function MasterSettingsClient() {
             <p className="text-sm text-gray-500">사이트 전체 설정 · 사용기간 · SEO 일일 한도</p>
           </div>
           <div className="flex gap-3 text-sm">
+            <Link href="/admin/sites" className="text-orange font-medium hover:underline">
+              등록 사이트
+            </Link>
             <Link href="/admin/register" className="text-orange font-medium hover:underline">
               + 신규 사이트
             </Link>

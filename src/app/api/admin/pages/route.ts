@@ -69,7 +69,7 @@ export async function DELETE(req: NextRequest) {
 
   if (isTenant && tenant) {
     await deleteTenantPage(tenant.id, id);
-    await removeCollectionJobsForPage(id, tenant.id);
+    await removeCollectionJobsForPage(id);
   } else {
     await deletePage(id);
     await removeRankingForPage(id);

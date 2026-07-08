@@ -10,6 +10,14 @@ import { getSettings } from "./data";
 import { getSiteConfig } from "./site-config";
 import { guidePageUrl } from "./constants";
 import { getSiteUrl } from "./site-url";
+import { getResolvedSiteConfig, getResolvedSiteConfigForTenant } from "@/utils/siteConfig";
+import { fetchTenantByHostname } from "@/lib/supabase/tenant-db";
+import {
+  deleteTenantCollectionJobsForPage,
+  findTenantCollectionJobById,
+  getTenantCollectionJobs,
+  saveTenantCollectionJob,
+} from "@/lib/supabase/tenant-collection-queue";
 
 export type { CollectionJob, CollectionJobStatus };
 
@@ -22,15 +30,84 @@ export interface CollectionPageStatus {
   error: string | null;
 }
 
+type CollectionScope =
+  | { type: "legacy"; siteUrl: string }
+  | { type: "tenant"; siteConfigId: string; subdomain: string; siteUrl: string };
+
 function normalizeUrl(url: string): string {
   return url.replace(/\/$/, "").trim();
 }
 
-export async function getCollectionSiteUrl(): Promise<string> {
+function hostnameFromSiteUrl(siteUrl: string): string {
+  const raw = siteUrl.trim();
+  try {
+    const parsed = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return parsed.hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return raw.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
+  }
+}
+
+function tenantSiteUrl(subdomain: string): string {
+  const proto = subdomain.includes("localhost") ? "http" : "https";
+  return normalizeUrl(`${proto}://${subdomain}`);
+}
+
+async function resolveScopeFromSiteUrl(siteUrl: string): Promise<CollectionScope> {
+  const normalized = normalizeUrl(siteUrl);
+  const hostname = hostnameFromSiteUrl(normalized);
+  const tenant = await fetchTenantByHostname(hostname);
+
+  if (tenant) {
+    return {
+      type: "tenant",
+      siteConfigId: tenant.id,
+      subdomain: tenant.subdomain,
+      siteUrl: tenantSiteUrl(tenant.subdomain),
+    };
+  }
+
+  return { type: "legacy", siteUrl: normalized };
+}
+
+async function resolveScopeForRequest(
+  siteConfigId?: string
+): Promise<CollectionScope> {
+  if (siteConfigId) {
+    const resolved = await getResolvedSiteConfigForTenant(siteConfigId);
+    if (resolved?.tenant) {
+      return {
+        type: "tenant",
+        siteConfigId: resolved.tenant.id,
+        subdomain: resolved.tenant.subdomain,
+        siteUrl: normalizeUrl(resolved.config.url),
+      };
+    }
+  }
+
+  const { tenant, isTenant, config } = await getResolvedSiteConfig();
+  if (isTenant && tenant) {
+    return {
+      type: "tenant",
+      siteConfigId: tenant.id,
+      subdomain: tenant.subdomain,
+      siteUrl: normalizeUrl(config.url),
+    };
+  }
+
+  return { type: "legacy", siteUrl: await getLegacyCollectionSiteUrl() };
+}
+
+async function getLegacyCollectionSiteUrl(): Promise<string> {
   const [settings, config] = await Promise.all([getSettings(), getSiteConfig()]);
   const fromSettings = settings.collectionSiteUrl?.trim();
   if (fromSettings) return normalizeUrl(fromSettings);
   return normalizeUrl(getSiteUrl(config));
+}
+
+export async function getCollectionSiteUrl(siteConfigId?: string): Promise<string> {
+  const scope = await resolveScopeForRequest(siteConfigId);
+  return scope.siteUrl;
 }
 
 export function buildPageAbsoluteUrl(siteUrl: string, slug: string): string {
@@ -47,7 +124,6 @@ function hasPendingForPage(jobs: CollectionJob[], pageId: string): boolean {
   return jobs.some((j) => j.pageId === pageId && j.status === "pending");
 }
 
-/** 페이지당 pending 1건만 유지 — 오래된 중복 pending 제거 */
 function dedupePendingJobsInQueue(jobs: CollectionJob[]): {
   jobs: CollectionJob[];
   removed: number;
@@ -81,7 +157,7 @@ function dedupePendingJobsInQueue(jobs: CollectionJob[]): {
   };
 }
 
-async function loadNormalizedQueue(): Promise<CollectionQueueData> {
+async function loadLegacyQueue(): Promise<CollectionQueueData> {
   const queue = await getCollectionQueue();
   const { jobs, removed } = dedupePendingJobsInQueue(queue.jobs);
   if (removed === 0) return queue;
@@ -92,7 +168,14 @@ async function loadNormalizedQueue(): Promise<CollectionQueueData> {
   return queue;
 }
 
-/** VM에 내려줄 pending — 페이지·URL당 최신 1건만 */
+async function loadJobsForScope(scope: CollectionScope): Promise<CollectionJob[]> {
+  if (scope.type === "tenant") {
+    return getTenantCollectionJobs(scope.siteConfigId);
+  }
+  const queue = await loadLegacyQueue();
+  return queue.jobs;
+}
+
 function uniquePendingJobsForWorker(jobs: CollectionJob[]): CollectionJob[] {
   const byPageId = new Map<string, CollectionJob>();
   for (const job of jobs) {
@@ -116,14 +199,26 @@ function uniquePendingJobsForWorker(jobs: CollectionJob[]): CollectionJob[] {
   );
 }
 
-export async function getCollectionStatusMap(): Promise<Map<string, CollectionPageStatus>> {
-  const queue = await getCollectionQueue();
-  const siteUrl = await getCollectionSiteUrl();
+/** 레거시 큐에 잘못된 siteUrl로 들어간 테넌트 job 보정 (pageUrl 호스트 기준) */
+async function legacyJobsForTenantSite(siteUrl: string): Promise<CollectionJob[]> {
+  const hostname = hostnameFromSiteUrl(siteUrl);
+  const queue = await loadLegacyQueue();
+  return queue.jobs.filter((job) => {
+    if (job.status !== "pending") return false;
+    return hostnameFromSiteUrl(job.pageUrl) === hostname;
+  });
+}
+
+export async function getCollectionStatusMap(
+  siteConfigId?: string
+): Promise<Map<string, CollectionPageStatus>> {
+  const scope = await resolveScopeForRequest(siteConfigId);
+  const jobs = await loadJobsForScope(scope);
   const map = new Map<string, CollectionPageStatus>();
 
-  for (const job of queue.jobs) {
+  for (const job of jobs) {
     const existing = map.get(job.pageId);
-    if (!existing || (job.requestedAt > (existing.requestedAt || ""))) {
+    if (!existing || job.requestedAt > (existing.requestedAt || "")) {
       map.set(job.pageId, {
         pageId: job.pageId,
         status: job.status,
@@ -140,28 +235,37 @@ export async function getCollectionStatusMap(): Promise<Map<string, CollectionPa
 
 export async function enqueueCollectionRequest(
   pageId: string,
-  knownPage?: SeoPage
+  knownPage?: SeoPage,
+  options?: { siteConfigId?: string }
 ): Promise<{
   ok: boolean;
   message: string;
   job?: CollectionJob;
 }> {
+  const scope = await resolveScopeForRequest(options?.siteConfigId);
+
   let page = knownPage;
   if (!page) {
-    const { getPages } = await import("./data");
-    const pages = await getPages();
-    page = pages.find((p) => p.id === pageId);
+    if (scope.type === "tenant") {
+      const { getTenantPages } = await import("@/lib/supabase/tenant-pages");
+      const pages = await getTenantPages(scope.siteConfigId);
+      page = pages.find((p) => p.id === pageId);
+    } else {
+      const { getPages } = await import("./data");
+      const pages = await getPages();
+      page = pages.find((p) => p.id === pageId);
+    }
   }
   if (!page || page.id !== pageId) {
     return { ok: false, message: "페이지를 찾을 수 없습니다." };
   }
 
-  const siteUrl = await getCollectionSiteUrl();
+  const siteUrl = scope.siteUrl;
   const pageUrl = buildPageAbsoluteUrl(siteUrl, page.slug);
-  const queue = await loadNormalizedQueue();
-  const latest = latestJobForPage(queue.jobs, pageId);
+  const jobs = await loadJobsForScope(scope);
+  const latest = latestJobForPage(jobs, pageId);
 
-  if (hasPendingForPage(queue.jobs, pageId)) {
+  if (hasPendingForPage(jobs, pageId)) {
     return { ok: false, message: "이미 대기 중인 URL입니다." };
   }
 
@@ -179,26 +283,46 @@ export async function enqueueCollectionRequest(
     slug: page.slug,
     status: "pending",
     requestedAt: now,
+    siteConfigId: scope.type === "tenant" ? scope.siteConfigId : undefined,
   };
 
-  queue.jobs.push(job);
-  queue.updatedAt = now;
-  await saveCollectionQueue(queue);
+  if (scope.type === "tenant") {
+    await saveTenantCollectionJob(scope.siteConfigId, job);
+  } else {
+    const queue = await loadLegacyQueue();
+    queue.jobs.push(job);
+    queue.updatedAt = now;
+    await saveCollectionQueue(queue);
+  }
 
-  return { ok: true, message: "순위반영(수집) 대기열에 등록했습니다. VM 프로그램이 가져가 처리합니다.", job };
+  return {
+    ok: true,
+    message: "순위반영(수집) 대기열에 등록했습니다. VM 프로그램이 가져가 처리합니다.",
+    job,
+  };
 }
 
-export async function enqueueAllPendingPages(): Promise<{
-  added: number;
-  skipped: number;
-}> {
-  const { getPages } = await import("./data");
-  const pages = await getPages();
+export async function enqueueAllPendingPages(
+  siteConfigId?: string
+): Promise<{ added: number; skipped: number }> {
+  const scope = await resolveScopeForRequest(siteConfigId);
+  let pages: SeoPage[];
+
+  if (scope.type === "tenant") {
+    const { getTenantPages } = await import("@/lib/supabase/tenant-pages");
+    pages = await getTenantPages(scope.siteConfigId);
+  } else {
+    const { getPages } = await import("./data");
+    pages = await getPages();
+  }
+
   let added = 0;
   let skipped = 0;
 
   for (const page of pages) {
-    const result = await enqueueCollectionRequest(page.id);
+    const result = await enqueueCollectionRequest(page.id, page, {
+      siteConfigId: scope.type === "tenant" ? scope.siteConfigId : undefined,
+    });
     if (result.ok) added++;
     else skipped++;
   }
@@ -207,9 +331,19 @@ export async function enqueueAllPendingPages(): Promise<{
 }
 
 export async function getPendingJobsForWorker(siteUrl: string): Promise<CollectionJob[]> {
+  const scope = await resolveScopeFromSiteUrl(siteUrl);
   const normalized = normalizeUrl(siteUrl);
-  const queue = await loadNormalizedQueue();
-  const pending = queue.jobs.filter(
+
+  if (scope.type === "tenant") {
+    const tenantPending = (await loadJobsForScope(scope)).filter(
+      (j) => normalizeUrl(j.siteUrl) === normalized && j.status === "pending"
+    );
+    const legacyPending = await legacyJobsForTenantSite(normalized);
+    const merged = uniquePendingJobsForWorker([...tenantPending, ...legacyPending]);
+    return merged;
+  }
+
+  const pending = (await loadJobsForScope(scope)).filter(
     (j) => normalizeUrl(j.siteUrl) === normalized && j.status === "pending"
   );
   return uniquePendingJobsForWorker(pending);
@@ -218,28 +352,55 @@ export async function getPendingJobsForWorker(siteUrl: string): Promise<Collecti
 export async function reportCollectionResults(
   results: { id: string; status: "submitted" | "failed"; error?: string }[]
 ): Promise<number> {
-  const queue = await getCollectionQueue();
   const now = new Date().toISOString();
   let updated = 0;
 
+  const legacyQueue = await getCollectionQueue();
+  let legacyDirty = false;
+
   for (const result of results) {
-    const job = queue.jobs.find((j) => j.id === result.id);
-    if (!job || job.status !== "pending") continue;
-    job.status = result.status;
-    job.submittedAt = now;
-    if (result.error) job.error = result.error;
-    updated++;
+    const legacyJob = legacyQueue.jobs.find((j) => j.id === result.id);
+    if (legacyJob && legacyJob.status === "pending") {
+      legacyJob.status = result.status;
+      legacyJob.submittedAt = now;
+      if (result.error) legacyJob.error = result.error;
+      legacyDirty = true;
+      updated++;
+      continue;
+    }
+
+    const tenantHit = await findTenantCollectionJobById(result.id);
+    if (tenantHit && tenantHit.job.status === "pending") {
+      const next: CollectionJob = {
+        ...tenantHit.job,
+        status: result.status,
+        submittedAt: now,
+        error: result.error || tenantHit.job.error,
+      };
+      await saveTenantCollectionJob(tenantHit.siteConfigId, next);
+      updated++;
+    }
   }
 
-  if (updated > 0) {
-    queue.updatedAt = now;
-    await saveCollectionQueue(queue);
+  if (legacyDirty) {
+    legacyQueue.updatedAt = now;
+    await saveCollectionQueue(legacyQueue);
   }
 
   return updated;
 }
 
-export async function removeCollectionJobsForPage(pageId: string): Promise<void> {
+export async function removeCollectionJobsForPage(
+  pageId: string,
+  siteConfigId?: string
+): Promise<void> {
+  const scope = await resolveScopeForRequest(siteConfigId);
+
+  if (scope.type === "tenant") {
+    await deleteTenantCollectionJobsForPage(scope.siteConfigId, pageId);
+    return;
+  }
+
   const queue = await getCollectionQueue();
   const next = queue.jobs.filter((j) => j.pageId !== pageId);
   if (next.length === queue.jobs.length) return;

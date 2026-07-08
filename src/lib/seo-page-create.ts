@@ -142,7 +142,9 @@ export async function createSeoPageFromKeyword(
     );
   }
 
-  const enqueueResult = await enqueueCollectionRequest(pageId, page);
+  const enqueueResult = await enqueueCollectionRequest(pageId, page, {
+    siteConfigId: isTenant && tenant ? tenant.id : undefined,
+  });
   if (!enqueueResult.ok) {
     console.error("Auto collection enqueue failed:", enqueueResult.message);
   }

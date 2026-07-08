@@ -279,6 +279,8 @@ export interface CollectionJob {
   requestedAt: string;
   submittedAt?: string;
   error?: string;
+  /** 테넌트 수집 job */
+  siteConfigId?: string;
 }
 
 export interface CollectionQueueData {

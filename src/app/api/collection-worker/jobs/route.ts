@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getCollectionSiteUrl,
   getPendingJobsForWorker,
+  normalizeCollectionSiteUrl,
   reportCollectionResults,
   verifyWorkerRequest,
 } from "@/lib/collection-queue";
@@ -19,7 +20,9 @@ export async function GET(request: NextRequest) {
   }
 
   const paramSite = request.nextUrl.searchParams.get("siteUrl")?.trim();
-  const siteUrl = paramSite || (await getCollectionSiteUrl());
+  const siteUrl = paramSite
+    ? normalizeCollectionSiteUrl(paramSite)
+    : await getCollectionSiteUrl();
   const jobs = await getPendingJobsForWorker(siteUrl);
 
   return NextResponse.json({

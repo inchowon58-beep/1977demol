@@ -245,6 +245,7 @@ export async function POST(req: NextRequest) {
   const naverVerification = String(body.naverVerification || "").trim();
   const naverAccountId = String(body.naverAccountId || "").trim();
   const siteDesign = parseSiteDesignId(body.siteDesign);
+  const isRestore = body.mode === "restore";
 
   if (!siteName || siteName.length < 2) {
     return NextResponse.json({ error: "사이트 이름을 입력해 주세요." }, { status: 400 });
@@ -330,13 +331,17 @@ export async function POST(req: NextRequest) {
 
     if (!vercel.ok) {
       const err = vercel.error || "Vercel 도메인 등록에 실패했습니다.";
-      if (err.includes("다른 Vercel 프로젝트")) {
+      if (isRestore) {
+        vercelNote = ` (Vercel: ${err} — 재등록은 DB 복구만 진행됨)`;
+      } else if (err.includes("다른 Vercel 프로젝트")) {
         vercelNote = ` (경고: ${err} — DB에는 저장됨)`;
       } else {
         vercelNote = ` (Vercel 자동 등록 생략: ${err})`;
       }
     } else if (vercel.data?.alreadyLinked) {
-      vercelNote = " (Vercel 도메인은 이미 연결되어 있었습니다)";
+      vercelNote = isRestore
+        ? " (기존 Vercel 도메인 연결 확인됨)"
+        : " (Vercel 도메인은 이미 연결되어 있었습니다)";
     }
 
     const siteUrl = `https://${subdomain}`;
@@ -351,9 +356,14 @@ export async function POST(req: NextRequest) {
       vercelSkipped: !vercel.ok,
       naverRegisterQueued,
       siteDesign,
-      message: `사이트가 Supabase에 저장되었습니다. (${siteDesignLabel(siteDesign)})${vercelNote}${
-        naverRegisterQueued ? " VM 네이버 등록 대기열에 추가되었습니다." : ""
-      } ${siteUrl} 에서 확인하세요.`,
+      restored: isRestore,
+      message: isRestore
+        ? `기존 사이트가 등록 목록에 복구되었습니다. (${siteDesignLabel(siteDesign)})${vercelNote}${
+            naverRegisterQueued ? " VM 네이버 등록 대기열에 추가되었습니다." : ""
+          } ${siteUrl} 에서 테넌트로 다시 동작합니다. SEO 페이지·대기열은 삭제 시 함께 지워졌을 수 있습니다.`
+        : `사이트가 Supabase에 저장되었습니다. (${siteDesignLabel(siteDesign)})${vercelNote}${
+            naverRegisterQueued ? " VM 네이버 등록 대기열에 추가되었습니다." : ""
+          } ${siteUrl} 에서 확인하세요.`,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "사이트 생성 중 알 수 없는 오류";

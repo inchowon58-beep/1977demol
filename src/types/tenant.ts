@@ -94,8 +94,10 @@ export interface CreateSiteInput {
   dailySeoLimit?: number | string;
   /** VM 네이버 등록용 계정 */
   naverAccountId?: string;
-  /** a | b | c — 미입력 시 A 디자인 */
+  /** a | b | c | d — 미입력 시 A 디자인 */
   siteDesign?: "a" | "b" | "c" | "d";
+  /** new=신규 생성, restore=DB만 삭제되고 도메인은 살아있는 사이트 복구 */
+  mode?: "new" | "restore";
 }
 
 export interface NaverAccountSummary {
@@ -118,6 +120,7 @@ export interface CreateSiteResult {
   vercelDomain?: { name: string; verified?: boolean };
   naverRegisterQueued?: boolean;
   siteDesign?: "a" | "b" | "c" | "d";
+  restored?: boolean;
 }
 
 export interface TenantSiteSummary {

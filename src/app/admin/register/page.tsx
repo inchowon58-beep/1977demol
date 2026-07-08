@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { isAuthenticated, isMasterAuthenticated } from "@/lib/auth";
 import { getSiteConfig } from "@/lib/site-config";
 import { buildPageMetadata } from "@/lib/metadata";
@@ -22,5 +23,9 @@ export default async function RegisterSitePage() {
   const master = await isMasterAuthenticated();
   if (!master) redirect("/admin/master");
 
-  return <RegisterSiteClient />;
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">불러오는 중...</div>}>
+      <RegisterSiteClient />
+    </Suspense>
+  );
 }

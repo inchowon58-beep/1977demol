@@ -207,12 +207,23 @@ export default function TenantSitesClient() {
           ) : sites.length === 0 ? (
             <div className="p-12 text-center">
               <p className="text-gray-500 mb-4">등록된 테넌트 사이트가 없습니다.</p>
-              <Link
-                href="/admin/register"
-                className="inline-flex items-center gap-2 bg-orange text-white font-bold px-5 py-2.5 rounded-xl hover:bg-orange-light transition text-sm"
-              >
-                + 첫 사이트 등록
-              </Link>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <Link
+                  href="/admin/register"
+                  className="inline-flex items-center gap-2 bg-orange text-white font-bold px-5 py-2.5 rounded-xl hover:bg-orange-light transition text-sm"
+                >
+                  + 신규 사이트 등록
+                </Link>
+                <Link
+                  href="/admin/register?mode=restore"
+                  className="inline-flex items-center gap-2 bg-white text-gray-700 font-semibold px-5 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 transition text-sm"
+                >
+                  기존 사이트 재등록
+                </Link>
+              </div>
+              <p className="text-xs text-gray-400 mt-4 max-w-md mx-auto">
+                도메인은 살아 있지만 관리자에서 삭제해 DB만 없어진 경우, 재등록으로 목록에 다시 연결할 수 있습니다.
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">

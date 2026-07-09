@@ -33,7 +33,7 @@ export class SeoCreateError extends Error {
 
 export async function createSeoPageFromKeyword(
   rawKeyword: string,
-  options?: { siteConfigId?: string }
+  options?: { siteConfigId?: string; skipLocalPartners?: boolean }
 ): Promise<{
   page: SeoPage;
   collectionEnqueued: boolean;
@@ -105,10 +105,16 @@ export async function createSeoPageFromKeyword(
     existingPages.map((p) => p.slug)
   );
 
-  const { region, partners } = await resolveLocalPartnersForKeyword(
-    trimmedKeyword,
-    getNaverCredentials(site)
-  );
+  let region: string | null = null;
+  let partners: Awaited<ReturnType<typeof resolveLocalPartnersForKeyword>>["partners"] = [];
+  if (!options?.skipLocalPartners) {
+    const resolved = await resolveLocalPartnersForKeyword(
+      trimmedKeyword,
+      getNaverCredentials(site)
+    );
+    region = resolved.region;
+    partners = resolved.partners;
+  }
 
   const page: SeoPage = {
     id: pageId,

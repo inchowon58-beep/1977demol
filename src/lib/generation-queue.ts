@@ -124,7 +124,7 @@ function buildQuotaResponse(
   };
 }
 
-const STALE_PROCESSING_MS = 15 * 60 * 1000;
+const STALE_PROCESSING_MS = 2.5 * 60 * 1000;
 
 export interface GenerationQueueSummary {
   pending: number;
@@ -358,8 +358,10 @@ export async function processNextGenerationJob(): Promise<GenerationWorkerRespon
   queue.updatedAt = now;
   await saveQueue(scope, queue);
 
-  const createOptions =
-    scope.type === "tenant" ? { siteConfigId: scope.siteConfigId } : undefined;
+  const createOptions = {
+    ...(scope.type === "tenant" ? { siteConfigId: scope.siteConfigId } : {}),
+    skipLocalPartners: true,
+  };
 
   try {
     const { page, collectionEnqueued } = await createSeoPageFromKeyword(

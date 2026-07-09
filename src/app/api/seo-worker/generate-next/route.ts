@@ -5,7 +5,8 @@ import {
 } from "@/lib/generation-queue";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 /**
  * VM SEO 생성 프로그램 — 대기열에서 1개 꺼내 Gemini 생성

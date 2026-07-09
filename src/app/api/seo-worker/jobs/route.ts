@@ -22,6 +22,9 @@ export async function GET(request: Request) {
 
   const body = {
     count: pendingJobs.length,
+    dailyLimit: quota.limit,
+    usedToday: quota.used,
+    remainingToday: quota.remaining,
     summary,
     quota,
     shouldPause: quota.shouldPause,

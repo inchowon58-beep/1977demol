@@ -4,5 +4,10 @@
       "path": "/api/cron/seo-rankings",
       "schedule": "0 12 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/seo-worker/generate-next/route.ts": {
+      "maxDuration": 300
+    }
+  }
 }

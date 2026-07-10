@@ -92,6 +92,7 @@ export default function AdminClient() {
     Map<string, { status: string; pageUrl: string }>
   >(new Map());
   const [requestingCollection, setRequestingCollection] = useState<string | null>(null);
+  const [bulkRequestingCollection, setBulkRequestingCollection] = useState(false);
   const [listPage, setListPage] = useState(1);
 
   const naverBtn =
@@ -220,6 +221,10 @@ export default function AdminClient() {
     const start = (listPage - 1) * LIST_PAGE_SIZE;
     return sortedPages.slice(start, start + LIST_PAGE_SIZE);
   }, [sortedPages, listPage]);
+
+  const unsubmittedCollectionCount = useMemo(() => {
+    return pages.filter((p) => collectionStatuses.get(p.id)?.status !== "submitted").length;
+  }, [pages, collectionStatuses]);
 
   useEffect(() => {
     if (listPage > totalListPages) {
@@ -439,6 +444,41 @@ export default function AdminClient() {
       setMessage("순위반영요청 중 오류가 발생했습니다.");
     }
     setRequestingCollection(null);
+  };
+
+  const handleBulkCollectionRequest = async () => {
+    if (unsubmittedCollectionCount === 0) {
+      setMessage("순위반영요청이 필요한 페이지가 없습니다.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `순위반영요청 완료가 아닌 페이지 ${unsubmittedCollectionCount}건을\n일괄로 수집 대기열에 등록할까요?\n\n(이미 VM 대기 중인 URL은 자동으로 건너뜁니다.)`
+    );
+    if (!confirmed) return;
+
+    setBulkRequestingCollection(true);
+    setMessage("일괄 순위반영요청 등록 중...");
+    try {
+      const res = await fetch("/api/admin/collection-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMessage(
+          data.message ||
+            `일괄 등록 완료: ${data.added ?? 0}건 추가, ${data.skipped ?? 0}건 스킵`
+        );
+        await loadData();
+      } else {
+        setMessage(data.error || data.message || "일괄 순위반영요청 실패");
+      }
+    } catch {
+      setMessage("일괄 순위반영요청 중 오류가 발생했습니다.");
+    }
+    setBulkRequestingCollection(false);
   };
 
   function isCollectionSubmitted(pageId: string): boolean {
@@ -919,7 +959,32 @@ export default function AdminClient() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-6">
-          <h2 className="font-bold text-dark mb-4">생성된 SEO 페이지 ({pages.length})</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="font-bold text-dark">생성된 SEO 페이지 ({pages.length})</h2>
+              {unsubmittedCollectionCount > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  순위반영요청 미완료 {unsubmittedCollectionCount}건
+                </p>
+              )}
+            </div>
+            {pages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void handleBulkCollectionRequest()}
+                disabled={
+                  bulkRequestingCollection ||
+                  unsubmittedCollectionCount === 0 ||
+                  requestingCollection !== null
+                }
+                className={naverBtn}
+              >
+                {bulkRequestingCollection
+                  ? "일괄 등록 중..."
+                  : `일괄 순위반영요청 (${unsubmittedCollectionCount}건)`}
+              </button>
+            )}
+          </div>
 
           {pages.length > 0 && (
             <div className="mb-6 rounded-lg border border-[#03C75A]/20 bg-[#f8fbf9] p-4">

@@ -1,9 +1,10 @@
-import { KNOWN_REGIONS, extractRegionFromKeyword } from "./region-parse";
+import { extractRegionFromKeyword } from "./region-parse";
 import { resolvePagesContext } from "./pages-resolver";
 import { guidePageUrl } from "./constants";
 import type { SiteConfig } from "./site-config-types";
+import { getSubRegionNames, normalizeCityKey } from "./sub-region-map";
 
-/** 인접·근방 지역 (수도권·광역시 중심) */
+/** 인접·근방 시·군 (관련 페이지 우선순위용) */
 const NEARBY_MAP: Record<string, string[]> = {
   의정부: ["양주", "동두천", "포천", "구리", "남양주"],
   양주: ["의정부", "동두천", "포천", "구리", "남양주"],
@@ -35,6 +36,7 @@ const NEARBY_MAP: Record<string, string[]> = {
   제주: ["서귀포", "애월", "한림", "성산", "표선"],
   춘천: ["원주", "홍천", "가평", "양평", "강릉"],
   원주: ["춘천", "횡성", "영월", "제천", "이천"],
+  서천: ["보령", "당진", "홍성", "예산", "부여"],
 };
 
 function hashSeed(seed: string): number {
@@ -57,24 +59,23 @@ function seededPick<T>(items: T[], seed: string, count: number): T[] {
   return arr.slice(0, count);
 }
 
-export function getNearbyRegionNames(region: string | null, seed: string, count = 5): string[] {
-  if (!region) {
-    return seededPick(
-      KNOWN_REGIONS.filter((r) => r.length >= 2),
-      seed,
-      count
-    );
-  }
+/** 인접 시·군 이름 (관련 페이지 링크 우선순위용) */
+export function getNearbyRegionNames(
+  region: string | null,
+  seed: string,
+  count = 5
+): string[] {
+  if (!region) return [];
 
-  const mapped = NEARBY_MAP[region];
+  const key = normalizeCityKey(region);
+  const mapped = NEARBY_MAP[key] || NEARBY_MAP[region];
   if (mapped && mapped.length >= count) {
     return mapped.slice(0, count);
   }
 
-  const pool = KNOWN_REGIONS.filter((r) => r !== region);
   const fromMap = mapped || [];
   const extra = seededPick(
-    pool.filter((r) => !fromMap.includes(r)),
+    Object.keys(NEARBY_MAP).filter((r) => r !== key && !fromMap.includes(r)),
     seed,
     Math.max(0, count - fromMap.length)
   );
@@ -86,23 +87,41 @@ export interface NearbyRegionLink {
   href: string | null;
 }
 
+/** 키워드 시·군·구 안 동·읍·면 근방 (페이지 있으면 링크) */
+export async function getNearbySubRegionLinks(
+  currentRegion: string | null,
+  currentSlug: string,
+  _currentKeyword: string
+): Promise<{ cityLabel: string | null; regions: NearbyRegionLink[] }> {
+  const names = getSubRegionNames(currentRegion, 5);
+  if (names.length === 0) {
+    return { cityLabel: currentRegion, regions: [] };
+  }
+
+  const { pages } = await resolvePagesContext();
+  const cityLabel = currentRegion ? normalizeCityKey(currentRegion) : null;
+
+  const regions = names.map((area) => {
+    const match = pages.find((p) => {
+      if (p.slug === currentSlug) return false;
+      const compact = p.keyword.replace(/\s/g, "");
+      return compact.includes(area) || compact.includes(`${cityLabel || ""}${area}`);
+    });
+    return {
+      region: area,
+      href: match ? guidePageUrl(match.slug) : null,
+    };
+  });
+
+  return { cityLabel: currentRegion, regions };
+}
+
+/** @deprecated getNearbySubRegionLinks 사용 */
 export async function getNearbyRegionLinks(
   currentRegion: string | null,
   currentSlug: string,
   _config: SiteConfig
 ): Promise<NearbyRegionLink[]> {
-  const names = getNearbyRegionNames(currentRegion, currentSlug, 5);
-  const { pages } = await resolvePagesContext();
-
-  return names.map((region) => {
-    const match = pages.find((p) => {
-      if (p.slug === currentSlug) return false;
-      const pageRegion = extractRegionFromKeyword(p.keyword);
-      return pageRegion === region || p.keyword.includes(region);
-    });
-    return {
-      region,
-      href: match ? guidePageUrl(match.slug) : null,
-    };
-  });
+  const { regions } = await getNearbySubRegionLinks(currentRegion, currentSlug, "");
+  return regions;
 }

@@ -8,7 +8,7 @@ import { resolvePagesContext } from "@/lib/pages-resolver";
 import { deleteTenantPage } from "@/lib/supabase/tenant-pages";
 import { getResolvedSiteConfig } from "@/utils/siteConfig";
 
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function GET() {
   if (!(await isAuthenticated())) {

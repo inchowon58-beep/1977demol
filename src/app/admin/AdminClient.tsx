@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { guidePageUrl } from "@/lib/constants";
-import { MAX_BULK_KEYWORDS } from "@/lib/parse-keywords";
 import RankingHistoryModal from "@/components/RankingHistoryModal";
 
 interface SeoPage {
@@ -40,43 +39,10 @@ interface SeoQuota {
 
 const LIST_PAGE_SIZE = 10;
 
-type CreateMode = "single" | "bulk" | "file";
-type QueueViewStatus = "pending" | "processing" | "completed" | "failed" | "all";
-
-interface GenerationSummary {
-  pending: number;
-  processing: number;
-  completed: number;
-  failed: number;
-  total: number;
-}
-
-interface GenerationJobRow {
-  id: string;
-  keyword: string;
-  status: string;
-  requestedAt: string;
-  error?: string;
-}
-
 export default function AdminClient() {
   const pathname = usePathname();
   const [pages, setPages] = useState<SeoPage[]>([]);
   const [keyword, setKeyword] = useState("");
-  const [createMode, setCreateMode] = useState<CreateMode>("single");
-  const [bulkText, setBulkText] = useState("");
-  const [bulkEnqueueing, setBulkEnqueueing] = useState(false);
-  const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
-  const [recentGenerationJobs, setRecentGenerationJobs] = useState<GenerationJobRow[]>([]);
-  const [queuePendingText, setQueuePendingText] = useState("");
-  const [queueJobs, setQueueJobs] = useState<GenerationJobRow[]>([]);
-  const [queueViewStatus, setQueueViewStatus] = useState<QueueViewStatus>("pending");
-  const [queueSaving, setQueueSaving] = useState(false);
-  const [queueExpanded, setQueueExpanded] = useState(true);
-  const [queueScope, setQueueScope] = useState<{
-    isTenant: boolean;
-    subdomain: string | null;
-  } | null>(null);
   const [brandName, setBrandName] = useState("");
   const [quota, setQuota] = useState<SeoQuota | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,17 +54,10 @@ export default function AdminClient() {
   const [hasNaverApi, setHasNaverApi] = useState(false);
   const [rankModal, setRankModal] = useState<{ pageId: string; keyword: string } | null>(null);
   const [checkingRanks, setCheckingRanks] = useState(false);
-  const [collectionStatuses, setCollectionStatuses] = useState<
-    Map<string, { status: string; pageUrl: string }>
-  >(new Map());
-  const [requestingCollection, setRequestingCollection] = useState<string | null>(null);
-  const [bulkRequestingCollection, setBulkRequestingCollection] = useState(false);
   const [listPage, setListPage] = useState(1);
 
   const naverBtn =
     "inline-flex items-center justify-center px-3.5 py-2 text-xs font-bold text-white bg-[#03C75A] rounded-[3px] hover:bg-[#02b351] active:bg-[#02a048] transition-colors shadow-sm disabled:opacity-70";
-  const naverBtnDone =
-    "inline-flex items-center justify-center px-3.5 py-2 text-xs font-bold text-white bg-[#03C75A] rounded-[3px] shadow-sm cursor-default select-none";
 
   function formatRank(rank: number | null): string {
     if (rank === null) return "-";
@@ -113,14 +72,11 @@ export default function AdminClient() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pagesRes, quotaRes, configRes, rankingsRes, collectionRes, generationRes] =
-        await Promise.all([
+      const [pagesRes, quotaRes, configRes, rankingsRes] = await Promise.all([
         fetch("/api/admin/pages", { cache: "no-store" }),
         fetch("/api/admin/seo-quota", { cache: "no-store" }),
         fetch("/api/site-config", { cache: "no-store" }),
         fetch("/api/admin/seo-rankings", { cache: "no-store" }),
-        fetch("/api/admin/collection-request", { cache: "no-store" }),
-        fetch("/api/admin/generation-queue", { cache: "no-store" }),
       ]);
       if (pagesRes.status === 401) {
         window.location.href = "/";
@@ -143,30 +99,6 @@ export default function AdminClient() {
       } else if (rankingsRes.status === 404) {
         setMessage("배포가 아직 반영되지 않았습니다. Vercel 재배포 후 새로고침하세요.");
       }
-      if (collectionRes.ok) {
-        const col = await collectionRes.json();
-        setCollectionStatuses(
-          new Map(
-            Object.entries(col.statuses || {}).map(([id, s]) => [
-              id,
-              s as { status: string; pageUrl: string },
-            ])
-          )
-        );
-      }
-      if (generationRes.ok) {
-        const gen = await generationRes.json();
-        setGenerationSummary(gen.summary);
-        setRecentGenerationJobs(gen.recent || []);
-        setQueuePendingText(gen.pendingText || "");
-        setQueueJobs(gen.jobs || []);
-        if (gen.scope) {
-          setQueueScope({
-            isTenant: !!gen.scope.isTenant,
-            subdomain: gen.scope.subdomain || null,
-          });
-        }
-      }
     } catch {
       setMessage("데이터 로드 실패");
     }
@@ -178,27 +110,6 @@ export default function AdminClient() {
       void loadData();
     }
   }, [pathname]);
-
-  useEffect(() => {
-    const refreshQuota = () => {
-      if (document.visibilityState === "visible") {
-        void loadData();
-      }
-    };
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        void loadData();
-      }
-    };
-    window.addEventListener("focus", refreshQuota);
-    document.addEventListener("visibilitychange", refreshQuota);
-    window.addEventListener("pageshow", onPageShow);
-    return () => {
-      window.removeEventListener("focus", refreshQuota);
-      document.removeEventListener("visibilitychange", refreshQuota);
-      window.removeEventListener("pageshow", onPageShow);
-    };
-  }, []);
 
   const topRankedPages = useMemo(() => {
     return pages
@@ -222,10 +133,6 @@ export default function AdminClient() {
     return sortedPages.slice(start, start + LIST_PAGE_SIZE);
   }, [sortedPages, listPage]);
 
-  const unsubmittedCollectionCount = useMemo(() => {
-    return pages.filter((p) => collectionStatuses.get(p.id)?.status !== "submitted").length;
-  }, [pages, collectionStatuses]);
-
   useEffect(() => {
     if (listPage > totalListPages) {
       setListPage(totalListPages);
@@ -235,18 +142,6 @@ export default function AdminClient() {
   const pageNumbers = useMemo(() => {
     return Array.from({ length: totalListPages }, (_, i) => i + 1);
   }, [totalListPages]);
-
-  const filteredQueueJobs = useMemo(() => {
-    if (queueViewStatus === "all") return queueJobs;
-    return queueJobs.filter((j) => j.status === queueViewStatus);
-  }, [queueJobs, queueViewStatus]);
-
-  const queueStatusLabel: Record<string, string> = {
-    pending: "대기",
-    processing: "생성중",
-    completed: "완료",
-    failed: "실패",
-  };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,108 +179,6 @@ export default function AdminClient() {
     setGenerating(false);
   };
 
-  const handleBulkEnqueue = async (text: string) => {
-    if (!text.trim()) {
-      setMessage("등록할 키워드를 입력하거나 파일을 선택해주세요.");
-      return;
-    }
-    if (quota?.service && !quota.service.active) {
-      setMessage("사용 기간이 만료되어 등록할 수 없습니다.");
-      return;
-    }
-
-    setBulkEnqueueing(true);
-    setMessage("VM 생성 대기열에 키워드 등록 중...");
-    try {
-      const res = await fetch("/api/admin/generation-queue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setMessage(data.message || `${data.added}개 키워드가 대기열에 등록되었습니다.`);
-        if (data.skippedReasons?.length) {
-          setMessage(
-            `${data.message} (건너뜀 ${data.skipped}건: ${data.skippedReasons.slice(0, 3).join(", ")}${data.skippedReasons.length > 3 ? "…" : ""})`
-          );
-        }
-        setBulkText("");
-        loadData();
-      } else {
-        setMessage(data.error || "대량 등록 실패.");
-      }
-    } catch {
-      setMessage("대량 등록 중 오류가 발생했습니다.");
-    }
-    setBulkEnqueueing(false);
-  };
-
-  const handleBulkSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await handleBulkEnqueue(bulkText);
-  };
-
-  const handleTxtFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".txt")) {
-      setMessage("TXT 파일만 업로드할 수 있습니다.");
-      e.target.value = "";
-      return;
-    }
-    try {
-      const text = await file.text();
-      setBulkText(text);
-      await handleBulkEnqueue(text);
-    } catch {
-      setMessage("파일을 읽는 중 오류가 발생했습니다.");
-    }
-    e.target.value = "";
-  };
-
-  const handleDownloadPendingTxt = () => {
-    window.location.href = "/api/admin/generation-queue?download=txt";
-  };
-
-  const handleSavePendingQueue = async () => {
-    if (quota?.service && !quota.service.active) {
-      setMessage("사용 기간이 만료되어 저장할 수 없습니다.");
-      return;
-    }
-    if (
-      !confirm(
-        "대기 중인 키워드 목록을 아래 내용으로 교체합니다. 생성 중·완료·실패 기록은 유지됩니다. 계속할까요?"
-      )
-    ) {
-      return;
-    }
-
-    setQueueSaving(true);
-    setMessage("대기열 저장 중...");
-    try {
-      const res = await fetch("/api/admin/generation-queue", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: queuePendingText }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        let msg = data.message || "대기열을 저장했습니다.";
-        if (data.skippedReasons?.length) {
-          msg += ` (건너뜀 ${data.skipped}건: ${data.skippedReasons.slice(0, 3).join(", ")}${data.skippedReasons.length > 3 ? "…" : ""})`;
-        }
-        setMessage(msg);
-        loadData();
-      } else {
-        setMessage(data.error || "대기열 저장 실패.");
-      }
-    } catch {
-      setMessage("대기열 저장 중 오류가 발생했습니다.");
-    }
-    setQueueSaving(false);
-  };
-
   const handleDeletePage = async (id: string) => {
     if (!confirm("이 SEO 페이지를 삭제하시겠습니까?")) return;
     await fetch("/api/admin/pages", {
@@ -418,7 +211,9 @@ export default function AdminClient() {
       const res = await fetch("/api/admin/seo-rankings/check", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setMessage(`순위 확인 완료: ${data.checked}개 페이지 (${data.errors?.length ? `오류 ${data.errors.length}건` : "성공"})`);
+        setMessage(
+          `순위 확인 완료: ${data.checked}개 페이지 (${data.errors?.length ? `오류 ${data.errors.length}건` : "성공"})`
+        );
         await loadData();
       } else {
         setMessage(data.error || "순위 확인에 실패했습니다.");
@@ -429,65 +224,8 @@ export default function AdminClient() {
     setCheckingRanks(false);
   };
 
-  const handleCollectionRequest = async (pageId: string) => {
-    setRequestingCollection(pageId);
-    try {
-      const res = await fetch("/api/admin/collection-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      setMessage(data.message || data.error || (res.ok ? "등록 완료" : "등록 실패"));
-      if (res.ok) await loadData();
-    } catch {
-      setMessage("순위반영요청 중 오류가 발생했습니다.");
-    }
-    setRequestingCollection(null);
-  };
-
-  const handleBulkCollectionRequest = async () => {
-    if (unsubmittedCollectionCount === 0) {
-      setMessage("순위반영요청이 필요한 페이지가 없습니다.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `순위반영요청 완료가 아닌 페이지 ${unsubmittedCollectionCount}건을\n일괄로 수집 대기열에 등록할까요?\n\n(이미 VM 대기 중인 URL은 자동으로 건너뜁니다.)`
-    );
-    if (!confirmed) return;
-
-    setBulkRequestingCollection(true);
-    setMessage("일괄 순위반영요청 등록 중...");
-    try {
-      const res = await fetch("/api/admin/collection-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setMessage(
-          data.message ||
-            `일괄 등록 완료: ${data.added ?? 0}건 추가, ${data.skipped ?? 0}건 스킵`
-        );
-        await loadData();
-      } else {
-        setMessage(data.error || data.message || "일괄 순위반영요청 실패");
-      }
-    } catch {
-      setMessage("일괄 순위반영요청 중 오류가 발생했습니다.");
-    }
-    setBulkRequestingCollection(false);
-  };
-
-  function isCollectionSubmitted(pageId: string): boolean {
-    return collectionStatuses.get(pageId)?.status === "submitted";
-  }
-
   function renderPageRow(page: SeoPage) {
     const rankInfo = rankings.get(page.id);
-    const collectionDone = isCollectionSubmitted(page.id);
     return (
       <div
         key={page.id}
@@ -514,20 +252,6 @@ export default function AdminClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          {collectionDone ? (
-            <span className={naverBtnDone} aria-label="순위반영요청 완료">
-              순위반영요청완료
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleCollectionRequest(page.id)}
-              disabled={requestingCollection === page.id}
-              className={naverBtn}
-            >
-              {requestingCollection === page.id ? "등록 중..." : "순위반영요청"}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setRankModal({ pageId: page.id, keyword: page.keyword })}
@@ -579,7 +303,9 @@ export default function AdminClient() {
             <Link href="/admin/master" className="text-orange font-medium hover:underline">
               ⚙️ 마스터 설정
             </Link>
-            <Link href="/" className="text-gray-400 hover:underline">← 메인</Link>
+            <Link href="/" className="text-gray-400 hover:underline">
+              ← 메인
+            </Link>
           </div>
         </div>
 
@@ -636,57 +362,6 @@ export default function AdminClient() {
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
           <h2 className="font-bold text-dark mb-4">SEO 페이지 생성</h2>
 
-          <div className="flex flex-wrap gap-2 mb-4">
-            {(
-              [
-                ["single", "개별 등록"],
-                ["bulk", "대량 등록 (텍스트)"],
-                ["file", "TXT 파일"],
-              ] as const
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setCreateMode(mode)}
-                className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${
-                  createMode === mode
-                    ? "bg-orange text-white border-orange"
-                    : "bg-white text-gray-600 border-gray-200 hover:border-orange/40"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {generationSummary && generationSummary.total > 0 && (
-            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm">
-              <p className="font-medium text-dark mb-1">
-                콘텐츠 자동 최적화 대기열
-                {queueScope?.isTenant && queueScope.subdomain && (
-                  <span className="ml-2 text-xs font-normal text-orange">
-                    {queueScope.subdomain} 전용
-                  </span>
-                )}
-              </p>
-              <p className="text-gray-600 text-xs">
-                대기 <strong className="text-orange">{generationSummary.pending}</strong>
-                {" · "}
-                생성중 <strong>{generationSummary.processing}</strong>
-                {" · "}
-                완료 <strong className="text-[#03C75A]">{generationSummary.completed}</strong>
-                {" · "}
-                실패 <strong className="text-red-500">{generationSummary.failed}</strong>
-              </p>
-              {generationSummary.pending > 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  VM이 설정한 간격(랜덤)마다 1개씩 자동 생성합니다.
-                </p>
-              )}
-            </div>
-          )}
-
-          {createMode === "single" && (
           <form onSubmit={handleGenerate} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">키워드</label>
@@ -700,291 +375,28 @@ export default function AdminClient() {
                 disabled={!canGenerate}
               />
             </div>
-            <div className="flex flex-col lg:flex-row lg:items-stretch gap-4">
-              <button
-                type="submit"
-                disabled={generating || !canGenerate}
-                className="px-8 py-3 bg-orange text-white font-bold rounded-xl hover:bg-orange-light transition disabled:opacity-50 shrink-0 lg:self-start"
-              >
-                {generating ? "AI 생성 중..." : "SEO 페이지 생성"}
-              </button>
-              <div className="flex-1 rounded-xl border border-[#03C75A]/25 bg-gradient-to-br from-[#e8f9ef] via-white to-[#f7fffa] px-4 py-3.5 shadow-sm">
-                <p className="text-sm font-bold text-[#03C75A] mb-2 flex items-center gap-1.5">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#03C75A] text-[10px] text-white font-black">
-                    P
-                  </span>
-                  포털 인덱싱 및 노출 최적화
-                </p>
-                <ul className="text-xs text-gray-700 space-y-1.5 leading-relaxed">
-                  <li className="flex gap-2">
-                    <span className="text-[#03C75A] font-bold shrink-0">✓</span>
-                    <span>
-                      <strong className="text-gray-900">페이지 생성 즉시</strong> 주요 포털 사이트
-                      수집 및 노출 최적화 작업이 진행됩니다.
-                    </span>
-                  </li>
-                  <li className="flex gap-2">
-                    <span className="text-[#03C75A] font-bold shrink-0">✓</span>
-                    <span>
-                      <strong className="text-gray-900">분산형 최적화 인프라 시스템</strong>을 통해
-                      사이트 신뢰도 분석 및 빌드가{" "}
-                      <strong className="text-gray-900">자동으로</strong> 진행됩니다.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-            {!canGenerate && quota.service && !quota.service.active && (
+            <button
+              type="submit"
+              disabled={generating || !canGenerate}
+              className="px-8 py-3 bg-orange text-white font-bold rounded-xl hover:bg-orange-light transition disabled:opacity-50"
+            >
+              {generating ? "AI 생성 중..." : "SEO 페이지 생성"}
+            </button>
+            {!canGenerate && quota?.service && !quota.service.active && (
               <p className="text-xs text-red-500">
                 사용 기간이 만료되었습니다. 마스터 설정에서 기간 연장 후 이용하세요.
               </p>
             )}
-            {!canGenerate && serviceActive && quota.remaining <= 0 && (
+            {!canGenerate && serviceActive && quota && quota.remaining <= 0 && (
               <p className="text-xs text-red-500">
                 오늘 생성 한도에 도달했습니다. 마스터 설정에서 한도를 조정하거나 내일 다시 시도하세요.
               </p>
             )}
           </form>
-          )}
-
-          {createMode === "bulk" && (
-            <form onSubmit={handleBulkSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  키워드 목록 (최대 {MAX_BULK_KEYWORDS}개)
-                </label>
-                <textarea
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-                  placeholder={`한 줄에 키워드 하나씩\n또는 쉼표(,)로 구분\n\n예:\n은평구철거지원금\n강동구철거지원금\n또는 은평구철거지원금, 강동구철거지원금`}
-                  rows={8}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:border-orange resize-y text-sm"
-                  disabled={!serviceActive}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={bulkEnqueueing || !serviceActive}
-                className="px-8 py-3 bg-dark text-white font-bold rounded-xl hover:bg-dark-light transition disabled:opacity-50"
-              >
-                {bulkEnqueueing ? "등록 중..." : "대량 등록 (순차발행)"}
-              </button>
-              <p className="text-xs text-gray-500">
-                즉시 생성하지 않고 대기열에 등록됩니다. 5~10분 간격으로 1개씩 생성합니다.
-              </p>
-            </form>
-          )}
-
-          {createMode === "file" && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  TXT 파일 업로드 (최대 {MAX_BULK_KEYWORDS}개)
-                </label>
-                <input
-                  type="file"
-                  accept=".txt,text/plain"
-                  onChange={handleTxtFile}
-                  disabled={bulkEnqueueing || !serviceActive}
-                  className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-orange file:text-white file:font-bold hover:file:bg-orange-light"
-                />
-              </div>
-              <p className="text-xs text-gray-500">
-                파일 형식: 한 줄에 키워드 하나, 또는 한 줄에 쉼표(,)로 여러 키워드 구분
-              </p>
-              {bulkText && (
-                <pre className="text-xs bg-gray-50 border border-gray-100 rounded-xl p-3 max-h-32 overflow-auto whitespace-pre-wrap">
-                  {bulkText.slice(0, 500)}
-                  {bulkText.length > 500 ? "…" : ""}
-                </pre>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <h2 className="font-bold text-dark">최적화 대기열 · 타겟 키워드 확인</h2>
-              <p className="text-xs text-gray-500 mt-1">
-                대기 중 키워드를 TXT처럼 편집·저장할 수 있습니다. (최대 {MAX_BULK_KEYWORDS}개)
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setQueueExpanded((v) => !v)}
-              className="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50"
-            >
-              {queueExpanded ? "접기" : "펼치기"}
-            </button>
-          </div>
-
-          {queueExpanded && (
-            <div className="space-y-5">
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    대기 중 키워드 ({generationSummary?.pending ?? 0}개)
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDownloadPendingTxt}
-                      className="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50"
-                    >
-                      TXT 다운로드
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void loadData()}
-                      disabled={loading}
-                      className="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      새로고침
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSavePendingQueue}
-                      disabled={queueSaving || !serviceActive}
-                      className="text-xs px-3 py-1.5 bg-dark text-white font-bold rounded-lg hover:bg-dark-light disabled:opacity-50"
-                    >
-                      {queueSaving ? "저장 중..." : "대기열 저장"}
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  value={queuePendingText}
-                  onChange={(e) => setQueuePendingText(e.target.value)}
-                  placeholder="대기 중인 키워드가 없습니다. 대량 등록 후 여기에 표시됩니다."
-                  rows={10}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:border-orange resize-y text-sm font-mono"
-                  disabled={!serviceActive}
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  한 줄에 키워드 하나. 편집 후 「대기열 저장」을 누르면 대기(pending) 목록만 교체됩니다.
-                  TXT 다운로드 → 메모장에서 수정 → 붙여넣기 후 저장도 가능합니다.
-                </p>
-              </div>
-
-              <div>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {(
-                    [
-                      ["pending", "대기"],
-                      ["processing", "생성중"],
-                      ["completed", "완료"],
-                      ["failed", "실패"],
-                      ["all", "전체"],
-                    ] as const
-                  ).map(([status, label]) => (
-                    <button
-                      key={status}
-                      type="button"
-                      onClick={() => setQueueViewStatus(status)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition ${
-                        queueViewStatus === status
-                          ? "bg-orange text-white border-orange"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-orange/40"
-                      }`}
-                    >
-                      {label}
-                      {generationSummary && status !== "all" && (
-                        <span className="ml-1 opacity-80">
-                          ({generationSummary[status as keyof GenerationSummary]})
-                        </span>
-                      )}
-                      {generationSummary && status === "all" && (
-                        <span className="ml-1 opacity-80">({generationSummary.total})</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-
-                {filteredQueueJobs.length === 0 ? (
-                  <p className="text-sm text-gray-400 py-4 text-center border border-dashed border-gray-200 rounded-xl">
-                    {queueViewStatus === "pending"
-                      ? "대기 중인 키워드가 없습니다."
-                      : "표시할 항목이 없습니다."}
-                  </p>
-                ) : (
-                  <div className="max-h-64 overflow-auto border border-gray-100 rounded-xl">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="text-left px-3 py-2 font-medium text-gray-600">키워드</th>
-                          <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">상태</th>
-                          <th className="text-left px-3 py-2 font-medium text-gray-600 w-36">등록일</th>
-                          {queueViewStatus === "failed" || queueViewStatus === "all" ? (
-                            <th className="text-left px-3 py-2 font-medium text-gray-600">메모</th>
-                          ) : null}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredQueueJobs.map((job) => (
-                          <tr key={job.id} className="border-t border-gray-100 hover:bg-gray-50/80">
-                            <td className="px-3 py-2 text-dark">{job.keyword}</td>
-                            <td className="px-3 py-2">
-                              <span
-                                className={`text-xs font-medium ${
-                                  job.status === "pending"
-                                    ? "text-orange"
-                                    : job.status === "processing"
-                                      ? "text-blue-600"
-                                      : job.status === "completed"
-                                        ? "text-[#03C75A]"
-                                        : "text-red-500"
-                                }`}
-                              >
-                                {queueStatusLabel[job.status] || job.status}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-gray-500">
-                              {job.requestedAt.slice(0, 16).replace("T", " ")}
-                            </td>
-                            {queueViewStatus === "failed" || queueViewStatus === "all" ? (
-                              <td className="px-3 py-2 text-xs text-red-500">{job.error || "-"}</td>
-                            ) : null}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {filteredQueueJobs.length > 0 && (
-                  <p className="text-xs text-gray-400 mt-2">{filteredQueueJobs.length}개 표시</p>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <h2 className="font-bold text-dark">생성된 SEO 페이지 ({pages.length})</h2>
-              {unsubmittedCollectionCount > 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  순위반영요청 미완료 {unsubmittedCollectionCount}건
-                </p>
-              )}
-            </div>
-            {pages.length > 0 && (
-              <button
-                type="button"
-                onClick={() => void handleBulkCollectionRequest()}
-                disabled={
-                  bulkRequestingCollection ||
-                  unsubmittedCollectionCount === 0 ||
-                  requestingCollection !== null
-                }
-                className={naverBtn}
-              >
-                {bulkRequestingCollection
-                  ? "일괄 등록 중..."
-                  : `일괄 순위반영요청 (${unsubmittedCollectionCount}건)`}
-              </button>
-            )}
-          </div>
+          <h2 className="font-bold text-dark mb-4">생성된 SEO 페이지 ({pages.length})</h2>
 
           {pages.length > 0 && (
             <div className="mb-6 rounded-lg border border-[#03C75A]/20 bg-[#f8fbf9] p-4">
@@ -1024,7 +436,8 @@ export default function AdminClient() {
 
           {rankingsUpdated && (
             <p className="text-xs text-gray-400 mb-4">
-              순위 갱신 {new Date(rankingsUpdated).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
+              순위 갱신{" "}
+              {new Date(rankingsUpdated).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
             </p>
           )}
           {!hasNaverApi && (
@@ -1081,8 +494,8 @@ export default function AdminClient() {
 
               <p className="text-center text-[11px] text-gray-400 mt-3">
                 {pages.length}개 중 {(listPage - 1) * LIST_PAGE_SIZE + 1}–
-                {Math.min(listPage * LIST_PAGE_SIZE, pages.length)}번째 표시 (페이지당{" "}
-                {LIST_PAGE_SIZE}개)
+                {Math.min(listPage * LIST_PAGE_SIZE, pages.length)}번째 표시 (페이지당 {LIST_PAGE_SIZE}
+                개)
               </p>
             </>
           )}
